@@ -38,6 +38,14 @@ ADK_DATABASE_URL = os.environ.get(
 )
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# Optional explicit model override. If unset, the agent auto-selects based
+# on which API key is configured. Accepts any LiteLLM model string or a
+# plain Gemini model name.
+# Examples: "gemini-2.5-flash", "openai/gpt-4o", "anthropic/claude-sonnet-4-20250514"
+LLM_MODEL = os.environ.get("LLM_MODEL", "")
 
 # Langfuse observability
 LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST", "http://localhost:3000")

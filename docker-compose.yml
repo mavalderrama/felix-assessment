@@ -5,9 +5,9 @@ services:
     environment:
       POSTGRES_DB: send_money
       POSTGRES_USER: send_money
-      POSTGRES_PASSWORD: send_money_dev
+      POSTGRES_PASSWORD: send_money
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
@@ -17,33 +17,19 @@ services:
       retries: 5
 
   # ── Langfuse Observability Stack ──────────────────────────
-  langfuse-postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: langfuse
-      POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: langfuse_dev
-    volumes:
-      - langfuse_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:latest
     environment:
-      CLICKHOUSE_DB: langfuse
-      CLICKHOUSE_USER: langfuse
-      CLICKHOUSE_PASSWORD: langfuse_dev
+      CLICKHOUSE_DB: send_money
+      CLICKHOUSE_USER: send_money
+      CLICKHOUSE_PASSWORD: send_money
     volumes:
       - langfuse_chdata:/var/lib/clickhouse
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      test: ["CMD-SHELL", "clickhouse-client --user send_money --password send_money --query 'SELECT 1'"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   langfuse-redis:
     image: redis:7-alpine
@@ -70,12 +56,14 @@ services:
   langfuse-server:
     image: langfuse/langfuse:latest
     ports:
-      - "3000:3000"
+      - "3010:3000"
     environment:
-      DATABASE_URL: postgresql://langfuse:langfuse_dev@langfuse-postgres:5432/langfuse
+      DATABASE_URL: postgresql://send_money:send_money@postgres:5432/send_money
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
-      CLICKHOUSE_USER: langfuse
-      CLICKHOUSE_PASSWORD: langfuse_dev
+      CLICKHOUSE_MIGRATION_URL: clickhouse://send_money:send_money@langfuse-clickhouse:9000
+      CLICKHOUSE_USER: send_money
+      CLICKHOUSE_PASSWORD: send_money
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
       REDIS_CONNECTION_STRING: redis://langfuse-redis:6379
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
       LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
@@ -85,17 +73,17 @@ services:
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       NEXTAUTH_SECRET: local-dev-secret-change-in-prod
       SALT: local-dev-salt-change-in-prod
-      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3010
       LANGFUSE_INIT_ORG_ID: local-dev
       LANGFUSE_INIT_ORG_NAME: "Local Dev"
       LANGFUSE_INIT_PROJECT_ID: send-money-agent
       LANGFUSE_INIT_PROJECT_NAME: "Send Money Agent"
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-local-dev
       LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-local-dev
-      LANGFUSE_INIT_USER_EMAIL: dev@localhost
+      LANGFUSE_INIT_USER_EMAIL: dev@localhost.local
       LANGFUSE_INIT_USER_PASSWORD: password
     depends_on:
-      langfuse-postgres:
+      postgres:
         condition: service_healthy
       langfuse-clickhouse:
         condition: service_healthy
