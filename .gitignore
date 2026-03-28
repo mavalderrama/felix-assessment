@@ -1,0 +1,39 @@
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Sparse vectorizer model (generated at runtime)
+.sparse_vectorizer.pkl
+
+# HuggingFace model cache
+.cache/
+~/.cache/huggingface/
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+
+# Project-specific
+CHALLENGE.md
+.claude
