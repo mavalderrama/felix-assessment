@@ -20,7 +20,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.environ.get("DB_NAME", "send_money"),
         "USER": os.environ.get("DB_USER", "send_money"),
-        "PASSWORD": os.environ.get("DB_PASSWORD", "send_money_dev"),
+        "PASSWORD": os.environ.get("DB_PASSWORD", "send_money"),
         "HOST": os.environ.get("DB_HOST", "localhost"),
         "PORT": os.environ.get("DB_PORT", "5432"),
     }
@@ -34,7 +34,7 @@ MIGRATION_MODULES = {
 # ADK DatabaseSessionService connection (SQLAlchemy + asyncpg internally)
 ADK_DATABASE_URL = os.environ.get(
     "ADK_DATABASE_URL",
-    "postgresql+asyncpg://send_money:send_money_dev@localhost:5432/send_money",
+    "postgresql+asyncpg://send_money:send_money@localhost:5432/send_money",
 )
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")

@@ -53,6 +53,17 @@ services:
       timeout: 5s
       retries: 5
 
+  langfuse-minio-init:
+    image: minio/mc
+    entrypoint: >
+      sh -c "
+      until mc alias set myminio http://langfuse-minio:9000 langfuse langfuse_dev; do sleep 1; done &&
+      mc mb --ignore-existing myminio/langfuse
+      "
+    depends_on:
+      langfuse-minio:
+        condition: service_healthy
+
   langfuse-server:
     image: langfuse/langfuse:latest
     ports:
@@ -89,8 +100,8 @@ services:
         condition: service_healthy
       langfuse-redis:
         condition: service_healthy
-      langfuse-minio:
-        condition: service_started
+      langfuse-minio-init:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

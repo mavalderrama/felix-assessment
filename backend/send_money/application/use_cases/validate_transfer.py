@@ -64,5 +64,10 @@ class ValidateTransferUseCase:
         draft.receive_amount_units = receive_money.units
         draft.receive_amount_nanos = receive_money.nanos
 
+        # Persist the rate itself so it is stored on the transfer record
+        rate_money = Money.from_decimal(rate, "")
+        draft.exchange_rate_units = rate_money.units
+        draft.exchange_rate_nanos = rate_money.nanos
+
         draft.status = TransferStatus.VALIDATED
         return draft

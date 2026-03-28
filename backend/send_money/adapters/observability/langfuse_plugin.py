@@ -35,16 +35,22 @@ class LangfuseAuditPlugin(BasePlugin):
         self._traces: dict[str, Any] = {}
 
     async def before_run_callback(self, *, invocation_context: "InvocationContext") -> None:
-        trace = self._langfuse.trace(
+        span = self._langfuse.start_observation(
             name="send-money-transfer",
-            user_id=invocation_context.user_id,
-            session_id=invocation_context.session.id,
+            as_type="span",
             metadata={
                 "app_name": invocation_context.app_name,
                 "invocation_id": invocation_context.invocation_id,
+                "user_id": invocation_context.user_id,
+                "session_id": invocation_context.session.id,
             },
         )
-        self._traces[invocation_context.invocation_id] = trace
+        self._traces[invocation_context.invocation_id] = span
+
+        # Write Langfuse IDs into session state upfront so tools (e.g.
+        # confirm_transfer) can read them before after_tool_callback fires.
+        invocation_context.session.state["_langfuse_trace_id"] = getattr(span, "trace_id", "")
+        invocation_context.session.state["_langfuse_observation_id"] = getattr(span, "id", "")
 
     async def after_tool_callback(
         self,
@@ -77,6 +83,7 @@ class LangfuseAuditPlugin(BasePlugin):
         filled = sum(1 for f in _REQUIRED_FIELDS if draft.get(f))
         completeness = filled / len(_REQUIRED_FIELDS)
         trace.score(name="field_completeness", value=completeness)
+        trace.end()
 
     async def close(self) -> None:
         self._langfuse.flush()

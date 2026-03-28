@@ -6,6 +6,7 @@ DI container.  No framework imports allowed here.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from typing import Optional
 
 from .entities import TransferDraft
@@ -37,3 +38,24 @@ class CorridorRepository(ABC):
     @abstractmethod
     async def is_supported(self, country_code: str, delivery_method: str) -> bool:
         """Return True when the country/method corridor is active."""
+
+
+class ExchangeRateRepository(ABC):
+    @abstractmethod
+    async def get_rate(self, source_currency: str, destination_currency: str) -> Optional[Decimal]:
+        """Return the active exchange rate, or None if not found."""
+
+
+class AuditLogRepository(ABC):
+    @abstractmethod
+    async def log(
+        self,
+        transfer_id: str,
+        session_id: str,
+        user_id: str,
+        action: str,
+        langfuse_trace_id: str = "",
+        langfuse_observation_id: str = "",
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """Persist an audit log entry for the given transfer."""

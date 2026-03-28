@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import uuid
+from typing import Optional
 
 from send_money.domain.entities import TransferDraft
 from send_money.domain.enums import TransferStatus
 from send_money.domain.errors import InvalidFieldError
-from send_money.domain.repositories import TransferRepository
+from send_money.domain.repositories import AuditLogRepository, TransferRepository
 
 
 def _generate_confirmation_code() -> str:
@@ -15,11 +16,23 @@ def _generate_confirmation_code() -> str:
 
 
 class ConfirmTransferUseCase:
-    def __init__(self, transfer_repository: TransferRepository) -> None:
+    def __init__(
+        self,
+        transfer_repository: TransferRepository,
+        audit_log_repository: Optional[AuditLogRepository] = None,
+    ) -> None:
         self._repository = transfer_repository
+        self._audit = audit_log_repository
 
-    async def execute(self, draft_dict: dict, session_id: str, user_id: str) -> TransferDraft:
-        """Persist the transfer and return the draft with a confirmation code."""
+    async def execute(
+        self,
+        draft_dict: dict,
+        session_id: str,
+        user_id: str,
+        langfuse_trace_id: str = "",
+        langfuse_observation_id: str = "",
+    ) -> TransferDraft:
+        """Persist the transfer, write an audit log entry, and return the draft."""
         draft = TransferDraft.from_state_dict(draft_dict)
 
         if draft.status != TransferStatus.VALIDATED:
@@ -35,4 +48,21 @@ class ConfirmTransferUseCase:
         draft.user_id = user_id
         draft.status = TransferStatus.CONFIRMED
 
-        return await self._repository.save(draft)
+        saved = await self._repository.save(draft)
+
+        if self._audit is not None:
+            await self._audit.log(
+                transfer_id=saved.id,
+                session_id=session_id,
+                user_id=user_id,
+                action="CONFIRMED",
+                langfuse_trace_id=langfuse_trace_id,
+                langfuse_observation_id=langfuse_observation_id,
+                metadata={
+                    "destination_country": saved.destination_country,
+                    "amount_currency": saved.amount_currency,
+                    "confirmation_code": saved.confirmation_code,
+                },
+            )
+
+        return saved

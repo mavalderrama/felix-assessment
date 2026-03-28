@@ -119,8 +119,17 @@ def create_tools(container: "Container") -> list[Callable]:
             except AttributeError:
                 pass
 
+        langfuse_trace_id: str = tool_context.state.get("_langfuse_trace_id", "") or ""
+        langfuse_observation_id: str = tool_context.state.get("_langfuse_observation_id", "") or ""
+
         try:
-            confirmed = await confirm_uc.execute(draft_dict, session_id, user_id)
+            confirmed = await confirm_uc.execute(
+                draft_dict,
+                session_id,
+                user_id,
+                langfuse_trace_id=langfuse_trace_id,
+                langfuse_observation_id=langfuse_observation_id,
+            )
         except DomainError as exc:
             return {"status": "error", "message": str(exc)}
 

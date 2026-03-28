@@ -6,11 +6,13 @@ real implementations without touching any other code (Open/Closed principle).
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Optional
 
 from send_money.application.ports import ExchangeRateService, FeeService
+from send_money.domain.repositories import ExchangeRateRepository
 from send_money.domain.value_objects import Money
 
-# Simulated FX rates vs USD
+# Fallback FX rates vs USD (used when the exchange_rates table has no row)
 _RATES: dict[str, Decimal] = {
     "MXN": Decimal("17.45"),
     "COP": Decimal("4120.50"),
@@ -38,10 +40,20 @@ _FEES: dict[tuple[str, str], str] = {
 
 
 class SimulatedExchangeRateService(ExchangeRateService):
+    def __init__(self, exchange_rate_repository: Optional[ExchangeRateRepository] = None) -> None:
+        self._repo = exchange_rate_repository
+
     async def get_rate(self, source_currency: str, destination_currency: str) -> Decimal:
         if source_currency == destination_currency:
             return Decimal("1.00")
-        # Convert to USD first, then to destination
+
+        # Query DB first; fall back to hardcoded rates if not found
+        if self._repo is not None:
+            db_rate = await self._repo.get_rate(source_currency, destination_currency)
+            if db_rate is not None:
+                return db_rate
+
+        # Fallback: cross via USD
         to_usd = Decimal("1") / _RATES.get(source_currency, Decimal("1"))
         to_dest = _RATES.get(destination_currency, Decimal("1"))
         return (to_usd * to_dest).quantize(Decimal("0.000001"))

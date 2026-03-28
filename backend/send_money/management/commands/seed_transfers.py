@@ -189,7 +189,7 @@ class Command(BaseCommand):
                     "beneficiary_name": t["beneficiary_name"],
                     "delivery_method": method,
                     "fee": fee,
-                    "exchange_rate": rate,
+                    "exchange_rate": rate.quantize(Decimal("0.000000001")),
                     "receive_amount": receive_amount,
                     "receive_currency": dest_currency,
                     "status": "CONFIRMED",

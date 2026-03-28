@@ -145,12 +145,14 @@ dependencies = [
     { name = "django" },
     { name = "google-adk" },
     { name = "googleapis-common-protos" },
+    { name = "greenlet" },
     { name = "langfuse" },
     { name = "litellm" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
     { name = "protobuf" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
     { name = "python-dotenv" },
 ]
 
@@ -171,12 +173,14 @@ requires-dist = [
     { name = "django", specifier = ">=6.0.3" },
     { name = "google-adk", specifier = ">=1.28.0" },
     { name = "googleapis-common-protos", specifier = ">=1.73.0" },
+    { name = "greenlet", specifier = ">=3.3.2" },
     { name = "langfuse", specifier = ">=2.60.0" },
     { name = "litellm", specifier = ">=1.72.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.33.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.33.0" },
     { name = "protobuf", specifier = ">=6.33.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
+    { name = "pydantic", specifier = ">=2.12.5" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 

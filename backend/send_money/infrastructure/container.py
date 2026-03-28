@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import os
 
+from send_money.adapters.persistence.audit_log_repository import DjangoAuditLogRepository
 from send_money.adapters.persistence.corridor_repository import DjangoCorridorRepository
+from send_money.adapters.persistence.exchange_rate_repository import DjangoExchangeRateRepository
 from send_money.adapters.persistence.transfer_repository import DjangoTransferRepository
 from send_money.application.use_cases.collect_transfer_details import CollectTransferDetailsUseCase
 from send_money.application.use_cases.confirm_transfer import ConfirmTransferUseCase
@@ -35,9 +37,11 @@ class Container:
         # Repositories
         self.corridor_repository = DjangoCorridorRepository()
         self.transfer_repository = DjangoTransferRepository()
+        self.exchange_rate_repository = DjangoExchangeRateRepository()
+        self.audit_log_repository = DjangoAuditLogRepository()
 
         # Simulated external services
-        self.exchange_rate_service = SimulatedExchangeRateService()
+        self.exchange_rate_service = SimulatedExchangeRateService(self.exchange_rate_repository)
         self.fee_service = SimulatedFeeService()
 
         # Use cases — constructor-injected
@@ -47,7 +51,10 @@ class Container:
             self.exchange_rate_service,
             self.fee_service,
         )
-        self.confirm_uc = ConfirmTransferUseCase(self.transfer_repository)
+        self.confirm_uc = ConfirmTransferUseCase(
+            self.transfer_repository,
+            self.audit_log_repository,
+        )
         self.corridors_uc = GetCorridorsUseCase(self.corridor_repository)
 
         # Observability (optional — skipped if keys are not configured)

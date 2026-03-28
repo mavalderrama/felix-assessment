@@ -16,6 +16,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.33.0",
     "python-dotenv>=1.0.0",
     "litellm>=1.72.0",
+    "greenlet>=3.3.2",
+    "pydantic>=2.12.5",
 ]
 
 [dependency-groups]
