@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package send_money.v1;
+
+// Supported delivery methods for a remittance transfer.
+enum DeliveryMethod {
+  DELIVERY_METHOD_UNSPECIFIED = 0;
+  BANK_DEPOSIT = 1;
+  MOBILE_WALLET = 2;
+  CASH_PICKUP = 3;
+}
+
+// Lifecycle status of a transfer draft as it moves through the conversation.
+enum TransferStatus {
+  TRANSFER_STATUS_UNSPECIFIED = 0;
+  COLLECTING = 1;   // Gathering required fields from the user
+  VALIDATED = 2;    // All fields present; fees and FX calculated
+  CONFIRMED = 3;    // User confirmed; record persisted to database
+  FAILED = 4;       // Validation or confirmation error
+}

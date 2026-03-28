@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package send_money.v1;
+
+import "google/type/money.proto";
+import "send_money/v1/common.proto";
+
+// A transfer being assembled across conversation turns.
+//
+// Monetary fields use google.type.Money (units: int64, nanos: int32) so no
+// floating-point representation ever touches a monetary value.
+message TransferDraft {
+  string id = 1;
+
+  // ISO 3166-1 alpha-2 destination country code (e.g. "MX", "PH").
+  string destination_country = 2;
+
+  // Amount the sender wants to send, in the source currency.
+  google.type.Money amount = 3;
+
+  string beneficiary_name = 4;
+  string beneficiary_id = 5;  // optional, for returning beneficiaries
+
+  DeliveryMethod delivery_method = 6;
+  TransferStatus status = 7;
+
+  // ISO 4217 currency codes resolved during validation.
+  string source_currency = 8;
+  string destination_currency = 9;
+
+  // Calculated fields populated after validate_transfer is called.
+  google.type.Money fee = 10;
+  google.type.Money receive_amount = 11;
+
+  // Idempotency key for safe retries on confirm_transfer.
+  string idempotency_key = 12;
+  string confirmation_code = 13;
+
+  string session_id = 14;
+  string user_id = 15;
+}
+
+// Returned by confirm_transfer once the transfer is persisted.
+message TransferConfirmation {
+  string transfer_id = 1;
+  string confirmation_code = 2;
+  TransferDraft draft = 3;
+}
