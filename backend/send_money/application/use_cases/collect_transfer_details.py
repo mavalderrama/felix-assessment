@@ -28,6 +28,8 @@ class CollectTransferDetailsUseCase:
                 self._set_currency(draft, field_value)
             case "beneficiary_name":
                 self._set_beneficiary_name(draft, field_value)
+            case "beneficiary_account":
+                self._set_beneficiary_account(draft, field_value)
             case "delivery_method":
                 await self._set_delivery_method(draft, field_value)
             case _:
@@ -38,12 +40,14 @@ class CollectTransferDetailsUseCase:
     # ── Field setters ────────────────────────────────────────
 
     async def _set_country(self, draft: TransferDraft, value: str) -> None:
+        from send_money.domain.enums import format_country
         code = value.strip().upper()
         supported = await self._corridors.get_supported_countries()
         if code not in supported:
+            labels = [format_country(c) for c in supported]
             raise InvalidFieldError(
                 "destination_country",
-                f"'{code}' is not supported. Supported: {', '.join(supported)}",
+                f"'{code}' is not supported. Supported: {', '.join(labels)}",
             )
         draft.destination_country = code
         # Reset delivery_method when country changes — old choice may be invalid
@@ -88,23 +92,32 @@ class CollectTransferDetailsUseCase:
             raise InvalidFieldError("beneficiary_name", "Name is too short.")
         draft.beneficiary_name = name
 
+    def _set_beneficiary_account(self, draft: TransferDraft, value: str) -> None:
+        account = value.strip()
+        if not account:
+            raise InvalidFieldError("beneficiary_account", "Account number cannot be empty.")
+        draft.beneficiary_account = account
+
     async def _set_delivery_method(self, draft: TransferDraft, value: str) -> None:
-        method = value.strip().upper()
+        from send_money.domain.enums import format_country, format_delivery_method
+        method = value.strip().upper().replace(" ", "_")
         try:
             dm = DeliveryMethod(method)
         except ValueError:
-            valid = [m.value for m in DeliveryMethod]
+            labels = [format_delivery_method(m.value) for m in DeliveryMethod]
             raise InvalidFieldError(
                 "delivery_method",
-                f"'{method}' is not valid. Choose from: {', '.join(valid)}",
+                f"'{method}' is not valid. Choose from: {', '.join(labels)}",
             )
         if draft.destination_country:
             supported = await self._corridors.get_delivery_methods(draft.destination_country)
             if method not in supported:
+                supported_labels = [format_delivery_method(m) for m in supported]
+                country_label = format_country(draft.destination_country)
                 raise InvalidFieldError(
                     "delivery_method",
-                    f"'{method}' is not available for {draft.destination_country}. "
-                    f"Available: {', '.join(supported)}",
+                    f"'{dm.display_name}' is not available for {country_label}. "
+                    f"Available: {', '.join(supported_labels)}",
                 )
         draft.delivery_method = dm
         # Reset calculated fields

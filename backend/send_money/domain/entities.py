@@ -13,6 +13,28 @@ from pydantic import BaseModel, Field
 from .enums import DeliveryMethod, TransferStatus
 
 
+class UserAccount(BaseModel):
+    """A user account with a balance used to fund transfers."""
+
+    id: Optional[str] = None
+    username: str = ""
+    password_hash: str = ""
+    balance_units: int = 0
+    balance_nanos: int = 0
+    balance_currency: str = "USD"
+
+
+class Beneficiary(BaseModel):
+    """A saved recipient for recurring money transfers."""
+
+    id: Optional[str] = None
+    user_id: str = ""
+    name: str = ""
+    account_number: str = ""
+    country_code: Optional[str] = None
+    delivery_method: Optional[DeliveryMethod] = None
+
+
 class TransferDraft(BaseModel):
     """Represents a transfer being assembled across conversation turns.
 
@@ -29,6 +51,7 @@ class TransferDraft(BaseModel):
     amount_currency: Optional[str] = None
 
     beneficiary_name: Optional[str] = None
+    beneficiary_account: Optional[str] = None
     beneficiary_id: Optional[str] = None
     delivery_method: Optional[DeliveryMethod] = None
     status: TransferStatus = TransferStatus.COLLECTING
@@ -61,6 +84,7 @@ class TransferDraft(BaseModel):
             "amount_units",
             "amount_currency",
             "beneficiary_name",
+            "beneficiary_account",
             "delivery_method",
         ],
         exclude=True,
@@ -73,6 +97,7 @@ class TransferDraft(BaseModel):
             "amount_units",
             "amount_currency",
             "beneficiary_name",
+            "beneficiary_account",
             "delivery_method",
         ]
         return [f for f in required if getattr(self, f) is None]

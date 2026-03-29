@@ -53,6 +53,61 @@ class DjangoTransferRepository(TransferRepository):
 
         return await _save()
 
+    async def save_and_deduct(
+        self,
+        draft: TransferDraft,
+        user_id: str,
+        deduct_units: int,
+        deduct_nanos: int,
+    ) -> TransferDraft:
+        @sync_to_async
+        def _save_and_deduct() -> TransferDraft:
+            from django.db import transaction
+            from send_money.adapters.persistence.django_models import TransferRecord, UserAccountRecord
+            from send_money.domain.errors import InsufficientFundsError
+
+            with transaction.atomic():
+                # Lock user account row and deduct balance atomically
+                account = UserAccountRecord.objects.select_for_update().get(id=user_id)
+                deduct_amount = _money_to_decimal(deduct_units, deduct_nanos)
+                if account.balance < deduct_amount:
+                    raise InsufficientFundsError(str(deduct_amount), str(account.balance))
+                account.balance -= deduct_amount
+                account.save(update_fields=["balance"])
+
+                # Idempotency check — if already saved, refund and return existing
+                existing_qs = TransferRecord.objects.select_for_update().filter(
+                    idempotency_key=draft.idempotency_key
+                )
+                if existing_qs.exists():
+                    # Refund: this is a duplicate submission, undo the deduction
+                    account.balance += deduct_amount
+                    account.save(update_fields=["balance"])
+                    return _to_entity(existing_qs.first())
+
+                record = TransferRecord.objects.create(
+                    id=draft.id,
+                    idempotency_key=draft.idempotency_key,
+                    destination_country=draft.destination_country,
+                    amount=_money_to_decimal(draft.amount_units, draft.amount_nanos),
+                    amount_currency=draft.amount_currency or "",
+                    beneficiary_name=draft.beneficiary_name or "",
+                    delivery_method=str(draft.delivery_method or ""),
+                    fee=_money_to_decimal(draft.fee_units, draft.fee_nanos),
+                    exchange_rate=_exchange_rate_decimal(draft),
+                    receive_amount=_money_to_decimal(
+                        draft.receive_amount_units, draft.receive_amount_nanos
+                    ),
+                    receive_currency=draft.destination_currency or "",
+                    status=str(draft.status),
+                    confirmation_code=draft.confirmation_code or "",
+                    session_id=draft.session_id or "",
+                    user_id=draft.user_id or "",
+                )
+                return _to_entity(record)
+
+        return await _save_and_deduct()
+
     async def get_by_id(self, transfer_id: str) -> Optional[TransferDraft]:
         @sync_to_async
         def _get() -> Optional[TransferDraft]:
@@ -73,7 +128,7 @@ def _money_to_decimal(units: Optional[int], nanos: Optional[int]) -> Decimal:
     if units is None:
         return Decimal("0")
     money = Money(units=units, nanos=nanos or 0, currency_code="")
-    return money.to_decimal().quantize(Decimal("0.0001"))
+    return money.to_decimal().quantize(Decimal("0.000000001"))
 
 
 def _exchange_rate_decimal(draft: TransferDraft) -> Optional[Decimal]:

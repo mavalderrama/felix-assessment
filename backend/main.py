@@ -18,11 +18,52 @@ sys.path.insert(0, os.path.dirname(__file__))
 from google.adk import Runner
 from google.genai import types
 
+from send_money.domain.errors import AuthenticationError, UsernameAlreadyExistsError
 from send_money.infrastructure.container import Container
+
+
+async def _authenticate(container: Container) -> str:
+    """Prompt for login or account creation. Returns the authenticated user_id."""
+    print("━━━ Send Money — Account ━━━━━━━━━━━━━━━━━━━")
+    print("  1. Create a new account")
+    print("  2. Log in to existing account")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+    while True:
+        choice = input("Choose (1/2): ").strip()
+        if choice in ("1", "2"):
+            break
+        print("Please enter 1 or 2.")
+
+    username = input("Username: ").strip()
+    password = input("Password: ").strip()
+
+    if choice == "1":
+        while True:
+            try:
+                account = await container.create_account_uc.execute(username, password)
+                print(f"\nAccount created! Welcome, {account.username}.\n")
+                return account.id or ""
+            except UsernameAlreadyExistsError as exc:
+                print(f"Error: {exc}")
+                username = input("Choose a different username: ").strip()
+    else:
+        while True:
+            try:
+                account = await container.login_uc.execute(username, password)
+                print(f"\nWelcome back, {account.username}!\n")
+                return account.id or ""
+            except AuthenticationError:
+                print("Invalid username or password. Try again.")
+                username = input("Username: ").strip()
+                password = input("Password: ").strip()
 
 
 async def main() -> None:
     container = Container()
+
+    user_id = await _authenticate(container)
+
     session_service = container.create_session_service()
     app = container.create_app()
 
@@ -30,7 +71,7 @@ async def main() -> None:
 
     session = await session_service.create_session(
         app_name="send_money",
-        user_id="cli_user",
+        user_id=user_id,
         state={"transfer_draft": {}},
     )
 
@@ -57,7 +98,7 @@ async def main() -> None:
         )
 
         async for event in runner.run_async(
-            user_id="cli_user",
+            user_id=user_id,
             session_id=session.id,
             new_message=content,
         ):

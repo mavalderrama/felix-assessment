@@ -5,9 +5,16 @@ from decimal import Decimal
 
 import pytest
 
-from send_money.domain.entities import TransferDraft
+from send_money.domain.entities import TransferDraft, UserAccount
 from send_money.domain.enums import DeliveryMethod, TransferStatus
-from send_money.domain.errors import InvalidFieldError, UnsupportedCorridorError
+from send_money.domain.errors import (
+    InsufficientFundsError,
+    InvalidFieldError,
+    UnsupportedCorridorError,
+    UsernameAlreadyExistsError,
+)
+from send_money.domain.repositories import UserAccountRepository
+from send_money.domain.value_objects import Money
 from send_money.application.use_cases.collect_transfer_details import CollectTransferDetailsUseCase
 from send_money.application.use_cases.validate_transfer import ValidateTransferUseCase
 from send_money.application.use_cases.confirm_transfer import ConfirmTransferUseCase
@@ -27,6 +34,7 @@ def _validated_draft_dict() -> dict:
         amount_nanos=0,
         amount_currency="USD",
         beneficiary_name="Maria Garcia",
+        beneficiary_account="1234567890",
         delivery_method=DeliveryMethod.BANK_DEPOSIT,
         status=TransferStatus.VALIDATED,
         source_currency="USD",
@@ -109,6 +117,16 @@ class TestCollectTransferDetailsUseCase:
             await uc.execute({}, "beneficiary_name", "A")
 
     @pytest.mark.asyncio
+    async def test_set_beneficiary_account(self, uc):
+        draft = await uc.execute({}, "beneficiary_account", "  1234567890  ")
+        assert draft.beneficiary_account == "1234567890"
+
+    @pytest.mark.asyncio
+    async def test_set_beneficiary_account_empty_raises(self, uc):
+        with pytest.raises(InvalidFieldError):
+            await uc.execute({}, "beneficiary_account", "   ")
+
+    @pytest.mark.asyncio
     async def test_set_delivery_method(self, uc):
         base = _draft_dict(destination_country="MX")
         draft = await uc.execute(base, "delivery_method", "BANK_DEPOSIT")
@@ -161,6 +179,7 @@ class TestValidateTransferUseCase:
             amount_nanos=0,
             amount_currency="USD",
             beneficiary_name="Maria Garcia",
+            beneficiary_account="1234567890",
             delivery_method=DeliveryMethod.BANK_DEPOSIT,
         )
         draft = await uc.execute(base)
@@ -183,6 +202,7 @@ class TestValidateTransferUseCase:
             amount_nanos=0,
             amount_currency="USD",
             beneficiary_name="Test User",
+            beneficiary_account="GB12345",
             delivery_method=DeliveryMethod.MOBILE_WALLET,
         )
         with pytest.raises(UnsupportedCorridorError):
@@ -190,6 +210,46 @@ class TestValidateTransferUseCase:
 
 
 # ── ConfirmTransferUseCase ────────────────────────────────────────────────────
+
+class _InMemoryUserAccountRepository(UserAccountRepository):
+    """Minimal in-memory UserAccountRepository for ConfirmTransferUseCase tests."""
+
+    def __init__(self, initial_balance: "Decimal | None" = None) -> None:
+        from decimal import Decimal
+        self._balance = initial_balance if initial_balance is not None else Decimal("1000")
+        self._user_id = "test-user"
+
+    async def create(self, account: UserAccount) -> UserAccount:
+        return account
+
+    async def get_by_username(self, username: str):
+        return None
+
+    async def get_by_id(self, user_id: str):
+        if user_id != self._user_id:
+            return None
+        bal = Money.from_decimal(self._balance, "USD")
+        return UserAccount(
+            id=self._user_id,
+            username="tester",
+            password_hash="x",
+            balance_units=bal.units,
+            balance_nanos=bal.nanos,
+        )
+
+    async def add_funds(self, user_id: str, units: int, nanos: int) -> UserAccount:
+        delta = Money(units=units, nanos=nanos, currency_code="").to_decimal()
+        self._balance += delta
+        return await self.get_by_id(user_id)
+
+    async def deduct_funds(self, user_id: str, units: int, nanos: int) -> UserAccount:
+        from decimal import Decimal
+        delta = Money(units=units, nanos=nanos, currency_code="").to_decimal()
+        if self._balance < delta:
+            raise InsufficientFundsError(str(delta), str(self._balance))
+        self._balance -= delta
+        return await self.get_by_id(user_id)
+
 
 class TestConfirmTransferUseCase:
     @pytest.fixture
@@ -222,6 +282,22 @@ class TestConfirmTransferUseCase:
         draft = await uc.execute(_validated_draft_dict(), "my-session", "my-user")
         assert draft.session_id == "my-session"
         assert draft.user_id == "my-user"
+
+    @pytest.mark.asyncio
+    async def test_confirm_with_sufficient_balance_succeeds(self, mock_transfer_repo):
+        from decimal import Decimal
+        user_repo = _InMemoryUserAccountRepository(initial_balance=Decimal("1000"))
+        uc = ConfirmTransferUseCase(mock_transfer_repo, user_account_repository=user_repo)
+        draft = await uc.execute(_validated_draft_dict(), "sess", "test-user")
+        assert draft.status == TransferStatus.CONFIRMED
+
+    @pytest.mark.asyncio
+    async def test_confirm_without_account_still_succeeds(self, mock_transfer_repo):
+        # user_id has no matching account → falls back to save() without deduction
+        user_repo = _InMemoryUserAccountRepository(initial_balance=None)
+        uc = ConfirmTransferUseCase(mock_transfer_repo, user_account_repository=user_repo)
+        draft = await uc.execute(_validated_draft_dict(), "sess", "unknown-user")
+        assert draft.status == TransferStatus.CONFIRMED
 
 
 # ── GetCorridorsUseCase ───────────────────────────────────────────────────────

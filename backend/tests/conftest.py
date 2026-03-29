@@ -45,10 +45,21 @@ def mock_transfer_repo():
             self._store[draft.id] = draft
             return draft
 
+        async def save_and_deduct(self, draft: TransferDraft, user_id: str, deduct_units: int, deduct_nanos: int) -> TransferDraft:
+            self._store[draft.id] = draft
+            return draft
+
         async def get_by_id(self, transfer_id: str):
             return self._store.get(transfer_id)
 
     return InMemoryTransferRepository()
+
+
+@pytest.fixture
+def in_memory_beneficiary_repo():
+    from send_money.adapters.persistence.beneficiary_repository import InMemoryBeneficiaryRepository
+
+    return InMemoryBeneficiaryRepository()
 
 
 @pytest.fixture

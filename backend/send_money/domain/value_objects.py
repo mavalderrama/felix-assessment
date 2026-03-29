@@ -85,5 +85,5 @@ class Money:
     # ── Display ─────────────────────────────────────────────
 
     def __str__(self) -> str:
-        amount = self.to_decimal().normalize()
+        amount = self.to_decimal().quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         return f"{amount} {self.currency_code}"

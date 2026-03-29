@@ -8,12 +8,20 @@ from __future__ import annotations
 import os
 
 from send_money.adapters.persistence.audit_log_repository import DjangoAuditLogRepository
+from send_money.adapters.persistence.beneficiary_repository import DjangoBeneficiaryRepository
 from send_money.adapters.persistence.corridor_repository import DjangoCorridorRepository
 from send_money.adapters.persistence.exchange_rate_repository import DjangoExchangeRateRepository
 from send_money.adapters.persistence.transfer_repository import DjangoTransferRepository
+from send_money.adapters.persistence.user_account_repository import DjangoUserAccountRepository
+from send_money.application.use_cases.add_funds import AddFundsUseCase
 from send_money.application.use_cases.collect_transfer_details import CollectTransferDetailsUseCase
 from send_money.application.use_cases.confirm_transfer import ConfirmTransferUseCase
+from send_money.application.use_cases.create_account import CreateAccountUseCase
+from send_money.application.use_cases.get_balance import GetBalanceUseCase
 from send_money.application.use_cases.get_corridors import GetCorridorsUseCase
+from send_money.application.use_cases.list_beneficiaries import ListBeneficiariesUseCase
+from send_money.application.use_cases.login import LoginUseCase
+from send_money.application.use_cases.save_beneficiary import SaveBeneficiaryUseCase
 from send_money.application.use_cases.validate_transfer import ValidateTransferUseCase
 from send_money.infrastructure.simulated_services import (
     SimulatedExchangeRateService,
@@ -39,6 +47,8 @@ class Container:
         self.transfer_repository = DjangoTransferRepository()
         self.exchange_rate_repository = DjangoExchangeRateRepository()
         self.audit_log_repository = DjangoAuditLogRepository()
+        self.user_account_repository = DjangoUserAccountRepository()
+        self.beneficiary_repository = DjangoBeneficiaryRepository()
 
         # Simulated external services
         self.exchange_rate_service = SimulatedExchangeRateService(self.exchange_rate_repository)
@@ -54,8 +64,19 @@ class Container:
         self.confirm_uc = ConfirmTransferUseCase(
             self.transfer_repository,
             self.audit_log_repository,
+            self.user_account_repository,
         )
         self.corridors_uc = GetCorridorsUseCase(self.corridor_repository)
+
+        # Account use cases
+        self.create_account_uc = CreateAccountUseCase(self.user_account_repository)
+        self.login_uc = LoginUseCase(self.user_account_repository)
+        self.add_funds_uc = AddFundsUseCase(self.user_account_repository)
+        self.get_balance_uc = GetBalanceUseCase(self.user_account_repository)
+
+        # Beneficiary use cases
+        self.save_beneficiary_uc = SaveBeneficiaryUseCase(self.beneficiary_repository)
+        self.list_beneficiaries_uc = ListBeneficiariesUseCase(self.beneficiary_repository)
 
         # Observability (optional — skipped if keys are not configured)
         self._langfuse_client = self._build_langfuse_client()

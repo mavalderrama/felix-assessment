@@ -7,7 +7,8 @@ from typing import Optional
 from send_money.domain.entities import TransferDraft
 from send_money.domain.enums import TransferStatus
 from send_money.domain.errors import InvalidFieldError
-from send_money.domain.repositories import AuditLogRepository, TransferRepository
+from send_money.domain.repositories import AuditLogRepository, TransferRepository, UserAccountRepository
+from send_money.domain.value_objects import Money
 
 
 def _generate_confirmation_code() -> str:
@@ -20,9 +21,11 @@ class ConfirmTransferUseCase:
         self,
         transfer_repository: TransferRepository,
         audit_log_repository: Optional[AuditLogRepository] = None,
+        user_account_repository: Optional[UserAccountRepository] = None,
     ) -> None:
         self._repository = transfer_repository
         self._audit = audit_log_repository
+        self._user_repo = user_account_repository
 
     async def execute(
         self,
@@ -48,7 +51,27 @@ class ConfirmTransferUseCase:
         draft.user_id = user_id
         draft.status = TransferStatus.CONFIRMED
 
-        saved = await self._repository.save(draft)
+        # If the user has an account, deduct amount + fee atomically with the transfer save
+        has_account = False
+        if self._user_repo is not None and user_id:
+            account = await self._user_repo.get_by_id(user_id)
+            has_account = account is not None
+
+        if has_account:
+            amount = Money(
+                units=draft.amount_units or 0,
+                nanos=draft.amount_nanos or 0,
+                currency_code=draft.amount_currency or "USD",
+            )
+            fee = Money(
+                units=draft.fee_units or 0,
+                nanos=draft.fee_nanos or 0,
+                currency_code=draft.amount_currency or "USD",
+            )
+            total = Money.from_decimal(amount.to_decimal() + fee.to_decimal(), draft.amount_currency or "USD")
+            saved = await self._repository.save_and_deduct(draft, user_id, total.units, total.nanos)
+        else:
+            saved = await self._repository.save(draft)
 
         if self._audit is not None:
             await self._audit.log(

@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Union
 from google.adk import Agent
 from google.adk.models.lite_llm import LiteLlm
 
-from send_money.adapters.agent.instructions import SEND_MONEY_INSTRUCTION
+from send_money.adapters.agent.guardrails import check_tool_args, check_user_input
+from send_money.adapters.agent.instructions import build_instruction
 from send_money.adapters.agent.tools import create_tools
 
 if TYPE_CHECKING:
@@ -56,11 +57,15 @@ def create_send_money_agent(container: "Container") -> Agent:
     return Agent(
         name="send_money_agent",
         model=model,
-        instruction=SEND_MONEY_INSTRUCTION,
+        instruction=build_instruction,
         tools=create_tools(container),
         # Store the agent's final text response in session state for easy access
         output_key="agent_response",
         # Single agent — no peer or parent to transfer to
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,
+        # Guardrails: inspect user input before the LLM call; validate tool
+        # arguments before each tool executes.
+        before_model_callback=check_user_input,
+        before_tool_callback=check_tool_args,
     )

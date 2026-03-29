@@ -22,6 +22,30 @@ class UnsupportedCorridorError(DomainError):
         )
 
 
+class AuthenticationError(DomainError):
+    """Raised when login credentials are invalid."""
+
+    def __init__(self, message: str = "Invalid username or password.") -> None:
+        super().__init__(message)
+
+
+class UsernameAlreadyExistsError(DomainError):
+    """Raised when trying to create an account with a username already taken."""
+
+    def __init__(self, username: str) -> None:
+        self.username = username
+        super().__init__(f"Username '{username}' is already taken.")
+
+
+class InsufficientFundsError(DomainError):
+    """Raised when the account balance is too low to cover a transfer."""
+
+    def __init__(self, required: str, available: str) -> None:
+        self.required = required
+        self.available = available
+        super().__init__(f"Insufficient funds: need {required}, have {available}.")
+
+
 class TransferNotFoundError(DomainError):
     """Raised when a transfer record cannot be found."""
 

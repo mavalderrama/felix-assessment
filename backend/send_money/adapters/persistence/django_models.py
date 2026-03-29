@@ -21,7 +21,7 @@ class Corridor(models.Model):
 
     class Meta:
         app_label = "send_money"
-        db_table = "corridors"
+        db_table = "send_money_corridors"
         unique_together = ("country_code", "delivery_method")
 
     def __str__(self) -> str:
@@ -37,17 +37,17 @@ class TransferRecord(models.Model):
 
     destination_country = models.CharField(max_length=2)
 
-    # Send amount — NUMERIC(19,4) via DecimalField
-    amount = models.DecimalField(max_digits=19, decimal_places=4)
+    # Send amount — NUMERIC(19,9) via DecimalField (9 decimal places = nano precision)
+    amount = models.DecimalField(max_digits=19, decimal_places=9)
     amount_currency = models.CharField(max_length=3)
 
     beneficiary_name = models.CharField(max_length=255)
     delivery_method = models.CharField(max_length=20)
 
     # Calculated fields
-    fee = models.DecimalField(max_digits=19, decimal_places=4, default=Decimal("0"))
+    fee = models.DecimalField(max_digits=19, decimal_places=9, default=Decimal("0"))
     exchange_rate = models.DecimalField(max_digits=19, decimal_places=9, null=True, blank=True)
-    receive_amount = models.DecimalField(max_digits=19, decimal_places=4, null=True, blank=True)
+    receive_amount = models.DecimalField(max_digits=19, decimal_places=9, null=True, blank=True)
     receive_currency = models.CharField(max_length=3, blank=True)
 
     status = models.CharField(max_length=20, default="CONFIRMED")
@@ -60,7 +60,7 @@ class TransferRecord(models.Model):
 
     class Meta:
         app_label = "send_money"
-        db_table = "transfers"
+        db_table = "send_money_transfers"
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(amount__gt=Decimal("0")),
@@ -83,11 +83,56 @@ class ExchangeRate(models.Model):
 
     class Meta:
         app_label = "send_money"
-        db_table = "exchange_rates"
+        db_table = "send_money_exchange_rates"
         unique_together = ("source_currency", "destination_currency")
 
     def __str__(self) -> str:
         return f"{self.source_currency}/{self.destination_currency} = {self.rate}"
+
+
+class UserAccountRecord(models.Model):
+    """User account with balance for funding transfers."""
+
+    id = models.CharField(max_length=36, primary_key=True)  # UUIDv4 set in Python
+    username = models.CharField(max_length=128, unique=True)
+    password_hash = models.CharField(max_length=512)
+    balance = models.DecimalField(max_digits=19, decimal_places=9, default=Decimal("0"))
+    balance_currency = models.CharField(max_length=3, default="USD")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "send_money"
+        db_table = "send_money_user_accounts"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(balance__gte=Decimal("0")),
+                name="account_balance_non_negative",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Account {self.username} ({self.balance} {self.balance_currency})"
+
+
+class BeneficiaryRecord(models.Model):
+    """Saved recipients for recurring money transfers."""
+
+    id = models.CharField(max_length=36, primary_key=True)  # UUIDv4 set in Python
+    user_id = models.CharField(max_length=128, db_index=True)
+    name = models.CharField(max_length=255)
+    account_number = models.CharField(max_length=255)
+    country_code = models.CharField(max_length=2, blank=True)
+    delivery_method = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "send_money"
+        db_table = "send_money_beneficiaries"
+        unique_together = ("user_id", "name")
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"Beneficiary {self.name} (user={self.user_id})"
 
 
 class TransferAuditLog(models.Model):
@@ -110,7 +155,7 @@ class TransferAuditLog(models.Model):
 
     class Meta:
         app_label = "send_money"
-        db_table = "transfer_audit_logs"
+        db_table = "send_money_transfer_audit_logs"
         ordering = ["-created_at"]
 
     def __str__(self) -> str:

@@ -9,13 +9,27 @@ from abc import ABC, abstractmethod
 from decimal import Decimal
 from typing import Optional
 
-from .entities import TransferDraft
+from .entities import Beneficiary, TransferDraft, UserAccount
 
 
 class TransferRepository(ABC):
     @abstractmethod
     async def save(self, draft: TransferDraft) -> TransferDraft:
         """Persist a confirmed transfer draft, returning the saved entity."""
+
+    @abstractmethod
+    async def save_and_deduct(
+        self,
+        draft: TransferDraft,
+        user_id: str,
+        deduct_units: int,
+        deduct_nanos: int,
+    ) -> TransferDraft:
+        """Atomically save a transfer AND deduct balance from the user's account.
+
+        Uses a single transaction.atomic() block. Raises InsufficientFundsError
+        if the account balance is too low.
+        """
 
     @abstractmethod
     async def get_by_id(self, transfer_id: str) -> Optional[TransferDraft]:
@@ -44,6 +58,50 @@ class ExchangeRateRepository(ABC):
     @abstractmethod
     async def get_rate(self, source_currency: str, destination_currency: str) -> Optional[Decimal]:
         """Return the active exchange rate, or None if not found."""
+
+
+class UserAccountRepository(ABC):
+    @abstractmethod
+    async def create(self, account: UserAccount) -> UserAccount:
+        """Persist a new user account."""
+
+    @abstractmethod
+    async def get_by_username(self, username: str) -> Optional[UserAccount]:
+        """Return an account by username, or None if not found."""
+
+    @abstractmethod
+    async def get_by_id(self, user_id: str) -> Optional[UserAccount]:
+        """Return an account by ID, or None if not found."""
+
+    @abstractmethod
+    async def add_funds(self, user_id: str, units: int, nanos: int) -> UserAccount:
+        """Add funds to the account. Returns the updated account."""
+
+    @abstractmethod
+    async def deduct_funds(self, user_id: str, units: int, nanos: int) -> UserAccount:
+        """Atomically deduct funds (SELECT FOR UPDATE). Raises InsufficientFundsError."""
+
+
+class BeneficiaryRepository(ABC):
+    @abstractmethod
+    async def create(self, beneficiary: Beneficiary) -> Beneficiary:
+        """Persist a new beneficiary, returning the saved entity."""
+
+    @abstractmethod
+    async def get_by_id(self, beneficiary_id: str) -> Optional[Beneficiary]:
+        """Return a beneficiary by primary key, or None if not found."""
+
+    @abstractmethod
+    async def list_for_user(self, user_id: str) -> list[Beneficiary]:
+        """Return all beneficiaries belonging to a user, ordered by name."""
+
+    @abstractmethod
+    async def find_by_name_and_user(self, user_id: str, name: str) -> Optional[Beneficiary]:
+        """Case-insensitive name lookup within a user's beneficiaries."""
+
+    @abstractmethod
+    async def update(self, beneficiary: Beneficiary) -> Beneficiary:
+        """Persist changes to an existing beneficiary."""
 
 
 class AuditLogRepository(ABC):

@@ -3,6 +3,8 @@
 *.iml
 .vscode/
 
+.adk/
+
 # Python
 .venv/
 __pycache__/
