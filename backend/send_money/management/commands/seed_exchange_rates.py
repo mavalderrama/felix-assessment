@@ -3,9 +3,11 @@
 Usage:
     python backend/manage.py seed_exchange_rates
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from django.core.management.base import BaseCommand
 
@@ -22,10 +24,10 @@ RATES = [
 ]
 
 
-class Command(BaseCommand):
+class Command(BaseCommand):  # type: ignore[misc]
     help = "Seed the exchange_rates table with default USD→X rates."
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         from send_money.adapters.persistence.django_models import ExchangeRate
 
         created = updated = 0

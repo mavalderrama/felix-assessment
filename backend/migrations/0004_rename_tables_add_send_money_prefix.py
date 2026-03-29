@@ -3,31 +3,33 @@
 from django.db import migrations
 
 
-class Migration(migrations.Migration):
-
+class Migration(migrations.Migration):  # type: ignore[misc]
     dependencies = [
-        ('send_money', '0003_alter_transferrecord_amount_alter_transferrecord_fee_and_more'),
+        (
+            "send_money",
+            "0003_alter_transferrecord_amount_alter_transferrecord_fee_and_more",
+        ),
     ]
 
     operations = [
         migrations.AlterModelTable(
-            name='corridor',
-            table='send_money_corridors',
+            name="corridor",
+            table="send_money_corridors",
         ),
         migrations.AlterModelTable(
-            name='exchangerate',
-            table='send_money_exchange_rates',
+            name="exchangerate",
+            table="send_money_exchange_rates",
         ),
         migrations.AlterModelTable(
-            name='transferauditlog',
-            table='send_money_transfer_audit_logs',
+            name="transferauditlog",
+            table="send_money_transfer_audit_logs",
         ),
         migrations.AlterModelTable(
-            name='transferrecord',
-            table='send_money_transfers',
+            name="transferrecord",
+            table="send_money_transfers",
         ),
         migrations.AlterModelTable(
-            name='useraccountrecord',
-            table='send_money_user_accounts',
+            name="useraccountrecord",
+            table="send_money_user_accounts",
         ),
     ]

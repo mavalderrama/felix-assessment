@@ -1,4 +1,5 @@
 """Password hashing utilities — pure stdlib, no framework imports."""
+
 from __future__ import annotations
 
 import hashlib

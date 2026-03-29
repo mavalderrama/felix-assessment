@@ -4,9 +4,10 @@ These are the in-memory representations used throughout the application.
 Money is stored as (units, nanos, currency_code) triplets to avoid any
 floating-point representation.
 """
+
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +17,7 @@ from .enums import DeliveryMethod, TransferStatus
 class UserAccount(BaseModel):
     """A user account with a balance used to fund transfers."""
 
-    id: Optional[str] = None
+    id: str | None = None
     username: str = ""
     password_hash: str = ""
     balance_units: int = 0
@@ -27,12 +28,12 @@ class UserAccount(BaseModel):
 class Beneficiary(BaseModel):
     """A saved recipient for recurring money transfers."""
 
-    id: Optional[str] = None
+    id: str | None = None
     user_id: str = ""
     name: str = ""
     account_number: str = ""
-    country_code: Optional[str] = None
-    delivery_method: Optional[DeliveryMethod] = None
+    country_code: str | None = None
+    delivery_method: DeliveryMethod | None = None
 
 
 class TransferDraft(BaseModel):
@@ -42,39 +43,39 @@ class TransferDraft(BaseModel):
     mirroring google.type.Money so no float is ever introduced.
     """
 
-    id: Optional[str] = None
-    destination_country: Optional[str] = None
+    id: str | None = None
+    destination_country: str | None = None
 
     # Send amount (google.type.Money layout)
-    amount_units: Optional[int] = None
-    amount_nanos: Optional[int] = None
-    amount_currency: Optional[str] = None
+    amount_units: int | None = None
+    amount_nanos: int | None = None
+    amount_currency: str | None = None
 
-    beneficiary_name: Optional[str] = None
-    beneficiary_account: Optional[str] = None
-    beneficiary_id: Optional[str] = None
-    delivery_method: Optional[DeliveryMethod] = None
+    beneficiary_name: str | None = None
+    beneficiary_account: str | None = None
+    beneficiary_id: str | None = None
+    delivery_method: DeliveryMethod | None = None
     status: TransferStatus = TransferStatus.COLLECTING
 
     # Calculated during validation
-    source_currency: Optional[str] = None
-    destination_currency: Optional[str] = None
+    source_currency: str | None = None
+    destination_currency: str | None = None
 
-    fee_units: Optional[int] = None
-    fee_nanos: Optional[int] = None
+    fee_units: int | None = None
+    fee_nanos: int | None = None
 
-    exchange_rate_units: Optional[int] = None
-    exchange_rate_nanos: Optional[int] = None
+    exchange_rate_units: int | None = None
+    exchange_rate_nanos: int | None = None
 
-    receive_amount_units: Optional[int] = None
-    receive_amount_nanos: Optional[int] = None
+    receive_amount_units: int | None = None
+    receive_amount_nanos: int | None = None
 
-    idempotency_key: Optional[str] = None
-    confirmation_code: Optional[str] = None
+    idempotency_key: str | None = None
+    confirmation_code: str | None = None
 
     # Session linkage
-    session_id: Optional[str] = None
-    user_id: Optional[str] = None
+    session_id: str | None = None
+    user_id: str | None = None
 
     # ── Derived helpers ──────────────────────────────────────
 
@@ -119,11 +120,11 @@ class TransferDraft(BaseModel):
         )
         return str(m)
 
-    def to_state_dict(self) -> dict:
+    def to_state_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dict for ADK session state."""
         return self.model_dump(mode="json")
 
     @classmethod
-    def from_state_dict(cls, d: dict) -> "TransferDraft":
+    def from_state_dict(cls, d: dict[str, Any]) -> TransferDraft:
         """Reconstruct from ADK session state dict."""
         return cls.model_validate(d)

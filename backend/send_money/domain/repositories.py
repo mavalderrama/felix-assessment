@@ -3,11 +3,12 @@
 Implementations live in adapters/persistence/ and are injected via the
 DI container.  No framework imports allowed here.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from decimal import Decimal
-from typing import Optional
+from typing import Any
 
 from .entities import Beneficiary, TransferDraft, UserAccount
 
@@ -32,7 +33,7 @@ class TransferRepository(ABC):
         """
 
     @abstractmethod
-    async def get_by_id(self, transfer_id: str) -> Optional[TransferDraft]:
+    async def get_by_id(self, transfer_id: str) -> TransferDraft | None:
         """Return a transfer by its primary key, or None if not found."""
 
 
@@ -46,7 +47,7 @@ class CorridorRepository(ABC):
         """Return active delivery methods for the given country."""
 
     @abstractmethod
-    async def get_destination_currency(self, country_code: str) -> Optional[str]:
+    async def get_destination_currency(self, country_code: str) -> str | None:
         """Return the primary ISO 4217 currency for the given country, or None."""
 
     @abstractmethod
@@ -56,7 +57,9 @@ class CorridorRepository(ABC):
 
 class ExchangeRateRepository(ABC):
     @abstractmethod
-    async def get_rate(self, source_currency: str, destination_currency: str) -> Optional[Decimal]:
+    async def get_rate(
+        self, source_currency: str, destination_currency: str
+    ) -> Decimal | None:
         """Return the active exchange rate, or None if not found."""
 
 
@@ -66,11 +69,11 @@ class UserAccountRepository(ABC):
         """Persist a new user account."""
 
     @abstractmethod
-    async def get_by_username(self, username: str) -> Optional[UserAccount]:
+    async def get_by_username(self, username: str) -> UserAccount | None:
         """Return an account by username, or None if not found."""
 
     @abstractmethod
-    async def get_by_id(self, user_id: str) -> Optional[UserAccount]:
+    async def get_by_id(self, user_id: str) -> UserAccount | None:
         """Return an account by ID, or None if not found."""
 
     @abstractmethod
@@ -79,7 +82,10 @@ class UserAccountRepository(ABC):
 
     @abstractmethod
     async def deduct_funds(self, user_id: str, units: int, nanos: int) -> UserAccount:
-        """Atomically deduct funds (SELECT FOR UPDATE). Raises InsufficientFundsError."""
+        """Atomically deduct funds (SELECT FOR UPDATE).
+
+        Raises InsufficientFundsError.
+        """
 
 
 class BeneficiaryRepository(ABC):
@@ -88,7 +94,7 @@ class BeneficiaryRepository(ABC):
         """Persist a new beneficiary, returning the saved entity."""
 
     @abstractmethod
-    async def get_by_id(self, beneficiary_id: str) -> Optional[Beneficiary]:
+    async def get_by_id(self, beneficiary_id: str) -> Beneficiary | None:
         """Return a beneficiary by primary key, or None if not found."""
 
     @abstractmethod
@@ -96,8 +102,11 @@ class BeneficiaryRepository(ABC):
         """Return all beneficiaries belonging to a user, ordered by name."""
 
     @abstractmethod
-    async def find_by_name_and_user(self, user_id: str, name: str) -> Optional[Beneficiary]:
-        """Case-insensitive name lookup within a user's beneficiaries."""
+    async def find_by_name_and_user(self, user_id: str, name: str) -> list[Beneficiary]:
+        """Case-insensitive name lookup — returns ALL entries for the name.
+
+        A beneficiary may have multiple entries with different delivery methods.
+        """
 
     @abstractmethod
     async def update(self, beneficiary: Beneficiary) -> Beneficiary:
@@ -114,6 +123,6 @@ class AuditLogRepository(ABC):
         action: str,
         langfuse_trace_id: str = "",
         langfuse_observation_id: str = "",
-        metadata: Optional[dict] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Persist an audit log entry for the given transfer."""

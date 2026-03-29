@@ -1,4 +1,5 @@
 """GetCorridorsUseCase — read-only corridor information for the agent."""
+
 from __future__ import annotations
 
 from send_money.domain.repositories import CorridorRepository

@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class SendMoneyConfig(AppConfig):
+class SendMoneyConfig(AppConfig):  # type: ignore[misc]
     name = "send_money"
     default_auto_field = "django.db.models.BigAutoField"
 

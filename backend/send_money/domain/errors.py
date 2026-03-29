@@ -17,9 +17,7 @@ class UnsupportedCorridorError(DomainError):
     def __init__(self, country: str, delivery_method: str) -> None:
         self.country = country
         self.delivery_method = delivery_method
-        super().__init__(
-            f"Corridor '{country}/{delivery_method}' is not supported."
-        )
+        super().__init__(f"Corridor '{country}/{delivery_method}' is not supported.")
 
 
 class AuthenticationError(DomainError):

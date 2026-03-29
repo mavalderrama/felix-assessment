@@ -1,7 +1,8 @@
 """ADK agent factory."""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any
 
 from google.adk import Agent
 from google.adk.models.lite_llm import LiteLlm
@@ -21,7 +22,7 @@ _PROVIDER_DEFAULTS = {
 }
 
 
-def _resolve_model(settings) -> Union[str, LiteLlm]:
+def _resolve_model(settings: Any) -> str | LiteLlm:
     """Return either a Gemini model name string or a LiteLlm wrapper.
 
     Resolution order:
@@ -48,7 +49,7 @@ def _resolve_model(settings) -> Union[str, LiteLlm]:
     return LiteLlm(model=model_str)
 
 
-def create_send_money_agent(container: "Container") -> Agent:
+def create_send_money_agent(container: Container) -> Agent:
     """Construct and return the configured Send Money LlmAgent."""
     from django.conf import settings
 
@@ -58,7 +59,7 @@ def create_send_money_agent(container: "Container") -> Agent:
         name="send_money_agent",
         model=model,
         instruction=build_instruction,
-        tools=create_tools(container),
+        tools=create_tools(container),  # type: ignore[arg-type]
         # Store the agent's final text response in session state for easy access
         output_key="agent_response",
         # Single agent — no peer or parent to transfer to

@@ -3,14 +3,16 @@
 All monetary conversions go through integer (units, nanos) arithmetic — no
 float is introduced at any conversion boundary.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from send_money.domain.value_objects import Money
 
-
 # ── Decimal  ←→  Money ──────────────────────────────────────────────────────
+
 
 def decimal_to_money(amount: Decimal, currency_code: str) -> Money:
     """Convert a Python Decimal to a Money value object."""
@@ -24,6 +26,7 @@ def money_to_decimal(money: Money) -> Decimal:
 
 # ── Money  ←→  proto ────────────────────────────────────────────────────────
 
+
 def money_to_proto(money: Money) -> object:
     """Convert a Money value object to a google.type.Money protobuf message."""
     return money.to_proto()
@@ -36,12 +39,13 @@ def proto_to_money(proto_money: object) -> Money:
 
 # ── Money  ←→  session-state dict ───────────────────────────────────────────
 
-def money_to_dict(money: Money) -> dict:
+
+def money_to_dict(money: Money) -> dict[str, Any]:
     """Serialise Money to a JSON-safe dict for ADK session state."""
     return money.to_dict()
 
 
-def dict_to_money(d: dict) -> Money:
+def dict_to_money(d: dict[str, Any]) -> Money:
     """Deserialise Money from an ADK session-state dict.
 
     google.type.Money serialises ``units`` as a string when going through
@@ -52,6 +56,7 @@ def dict_to_money(d: dict) -> Money:
 
 
 # ── Convenience: Decimal  ←→  proto (round-trip) ────────────────────────────
+
 
 def decimal_to_proto(amount: Decimal, currency_code: str) -> object:
     return money_to_proto(decimal_to_money(amount, currency_code))

@@ -1,8 +1,9 @@
 """Exchange rate repository — reads from the exchange_rates table."""
+
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional
+from typing import cast
 
 from asgiref.sync import sync_to_async
 
@@ -10,9 +11,11 @@ from send_money.domain.repositories import ExchangeRateRepository
 
 
 class DjangoExchangeRateRepository(ExchangeRateRepository):
-    async def get_rate(self, source_currency: str, destination_currency: str) -> Optional[Decimal]:
+    async def get_rate(
+        self, source_currency: str, destination_currency: str
+    ) -> Decimal | None:
         @sync_to_async
-        def _get() -> Optional[Decimal]:
+        def _get() -> Decimal | None:
             from send_money.adapters.persistence.django_models import ExchangeRate
 
             try:
@@ -21,7 +24,7 @@ class DjangoExchangeRateRepository(ExchangeRateRepository):
                     destination_currency=destination_currency,
                     is_active=True,
                 )
-                return row.rate
+                return cast(Decimal, row.rate)
             except ExchangeRate.DoesNotExist:
                 return None
 

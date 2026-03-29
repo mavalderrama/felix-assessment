@@ -1,4 +1,5 @@
 """AddFundsUseCase — deposit money into a user account."""
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -13,7 +14,9 @@ class AddFundsUseCase:
     def __init__(self, user_repo: UserAccountRepository) -> None:
         self._user_repo = user_repo
 
-    async def execute(self, user_id: str, amount_str: str, currency: str) -> UserAccount:
+    async def execute(
+        self, user_id: str, amount_str: str, currency: str
+    ) -> UserAccount:
         """Add funds to the account. Returns the updated account."""
         try:
             amount = Decimal(amount_str.strip().replace(",", ""))

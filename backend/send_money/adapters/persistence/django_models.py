@@ -3,6 +3,7 @@
 All monetary columns use DecimalField which maps to PostgreSQL NUMERIC — exact
 decimal arithmetic, no floating-point representation.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -11,7 +12,7 @@ from decimal import Decimal
 from django.db import models
 
 
-class Corridor(models.Model):
+class Corridor(models.Model):  # type: ignore[misc]
     """Supported country / delivery-method combinations."""
 
     country_code = models.CharField(max_length=2)
@@ -28,7 +29,7 @@ class Corridor(models.Model):
         return f"{self.country_code}/{self.delivery_method} ({self.currency_code})"
 
 
-class TransferRecord(models.Model):
+class TransferRecord(models.Model):  # type: ignore[misc]
     """Persisted transfer records — written once on confirmation."""
 
     # Primary key is a UUIDv4 generated in Python before INSERT
@@ -46,8 +47,12 @@ class TransferRecord(models.Model):
 
     # Calculated fields
     fee = models.DecimalField(max_digits=19, decimal_places=9, default=Decimal("0"))
-    exchange_rate = models.DecimalField(max_digits=19, decimal_places=9, null=True, blank=True)
-    receive_amount = models.DecimalField(max_digits=19, decimal_places=9, null=True, blank=True)
+    exchange_rate = models.DecimalField(
+        max_digits=19, decimal_places=9, null=True, blank=True
+    )
+    receive_amount = models.DecimalField(
+        max_digits=19, decimal_places=9, null=True, blank=True
+    )
     receive_currency = models.CharField(max_length=3, blank=True)
 
     status = models.CharField(max_length=20, default="CONFIRMED")
@@ -69,10 +74,13 @@ class TransferRecord(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"Transfer {self.confirmation_code} — {self.amount} {self.amount_currency} → {self.destination_country}"
+        return (
+            f"Transfer {self.confirmation_code} — "
+            f"{self.amount} {self.amount_currency} → {self.destination_country}"
+        )
 
 
-class ExchangeRate(models.Model):
+class ExchangeRate(models.Model):  # type: ignore[misc]
     """Live exchange rates used by the FX service."""
 
     source_currency = models.CharField(max_length=3)
@@ -90,7 +98,7 @@ class ExchangeRate(models.Model):
         return f"{self.source_currency}/{self.destination_currency} = {self.rate}"
 
 
-class UserAccountRecord(models.Model):
+class UserAccountRecord(models.Model):  # type: ignore[misc]
     """User account with balance for funding transfers."""
 
     id = models.CharField(max_length=36, primary_key=True)  # UUIDv4 set in Python
@@ -114,7 +122,7 @@ class UserAccountRecord(models.Model):
         return f"Account {self.username} ({self.balance} {self.balance_currency})"
 
 
-class BeneficiaryRecord(models.Model):
+class BeneficiaryRecord(models.Model):  # type: ignore[misc]
     """Saved recipients for recurring money transfers."""
 
     id = models.CharField(max_length=36, primary_key=True)  # UUIDv4 set in Python
@@ -128,14 +136,14 @@ class BeneficiaryRecord(models.Model):
     class Meta:
         app_label = "send_money"
         db_table = "send_money_beneficiaries"
-        unique_together = ("user_id", "name")
+        unique_together = ("user_id", "name", "account_number", "delivery_method")
         ordering = ["name"]
 
     def __str__(self) -> str:
         return f"Beneficiary {self.name} (user={self.user_id})"
 
 
-class TransferAuditLog(models.Model):
+class TransferAuditLog(models.Model):  # type: ignore[misc]
     """Audit log entry written on every confirmed transfer."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -159,4 +167,7 @@ class TransferAuditLog(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"AuditLog {self.action} transfer={self.transfer_id} session={self.session_id}"
+        return (
+            f"AuditLog {self.action} "
+            f"transfer={self.transfer_id} session={self.session_id}"
+        )

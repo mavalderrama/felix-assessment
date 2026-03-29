@@ -3,28 +3,30 @@
 from django.db import migrations, models
 
 
-class Migration(migrations.Migration):
-
+class Migration(migrations.Migration):  # type: ignore[misc]
     dependencies = [
-        ('send_money', '0004_rename_tables_add_send_money_prefix'),
+        ("send_money", "0004_rename_tables_add_send_money_prefix"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='BeneficiaryRecord',
+            name="BeneficiaryRecord",
             fields=[
-                ('id', models.CharField(max_length=36, primary_key=True, serialize=False)),
-                ('user_id', models.CharField(db_index=True, max_length=128)),
-                ('name', models.CharField(max_length=255)),
-                ('account_number', models.CharField(max_length=255)),
-                ('country_code', models.CharField(blank=True, max_length=2)),
-                ('delivery_method', models.CharField(blank=True, max_length=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.CharField(max_length=36, primary_key=True, serialize=False),
+                ),
+                ("user_id", models.CharField(db_index=True, max_length=128)),
+                ("name", models.CharField(max_length=255)),
+                ("account_number", models.CharField(max_length=255)),
+                ("country_code", models.CharField(blank=True, max_length=2)),
+                ("delivery_method", models.CharField(blank=True, max_length=20)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'db_table': 'send_money_beneficiaries',
-                'ordering': ['name'],
-                'unique_together': {('user_id', 'name')},
+                "db_table": "send_money_beneficiaries",
+                "ordering": ["name"],
+                "unique_together": {("user_id", "name")},
             },
         ),
     ]

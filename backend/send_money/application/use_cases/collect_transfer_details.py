@@ -1,7 +1,9 @@
 """CollectTransferDetailsUseCase — validate and store a single transfer field."""
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from send_money.domain.entities import TransferDraft
 from send_money.domain.enums import DeliveryMethod
@@ -14,10 +16,12 @@ class CollectTransferDetailsUseCase:
         self._corridors = corridor_repository
 
     async def execute(
-        self, draft_dict: dict, field_name: str, field_value: str
+        self, draft_dict: dict[str, Any], field_name: str, field_value: str
     ) -> TransferDraft:
         """Validate field_value for field_name and return the updated draft."""
-        draft = TransferDraft.from_state_dict(draft_dict) if draft_dict else TransferDraft()
+        draft = (
+            TransferDraft.from_state_dict(draft_dict) if draft_dict else TransferDraft()
+        )
 
         match field_name:
             case "destination_country":
@@ -41,6 +45,7 @@ class CollectTransferDetailsUseCase:
 
     async def _set_country(self, draft: TransferDraft, value: str) -> None:
         from send_money.domain.enums import format_country
+
         code = value.strip().upper()
         supported = await self._corridors.get_supported_countries()
         if code not in supported:
@@ -82,7 +87,9 @@ class CollectTransferDetailsUseCase:
     def _set_currency(self, draft: TransferDraft, value: str) -> None:
         code = value.strip().upper()
         if len(code) != 3 or not code.isalpha():
-            raise InvalidFieldError("currency", f"'{code}' is not a valid ISO 4217 code.")
+            raise InvalidFieldError(
+                "currency", f"'{code}' is not a valid ISO 4217 code."
+            )
         draft.amount_currency = code
         draft.source_currency = code
 
@@ -95,11 +102,14 @@ class CollectTransferDetailsUseCase:
     def _set_beneficiary_account(self, draft: TransferDraft, value: str) -> None:
         account = value.strip()
         if not account:
-            raise InvalidFieldError("beneficiary_account", "Account number cannot be empty.")
+            raise InvalidFieldError(
+                "beneficiary_account", "Account number cannot be empty."
+            )
         draft.beneficiary_account = account
 
     async def _set_delivery_method(self, draft: TransferDraft, value: str) -> None:
         from send_money.domain.enums import format_country, format_delivery_method
+
         method = value.strip().upper().replace(" ", "_")
         try:
             dm = DeliveryMethod(method)
@@ -110,7 +120,9 @@ class CollectTransferDetailsUseCase:
                 f"'{method}' is not valid. Choose from: {', '.join(labels)}",
             )
         if draft.destination_country:
-            supported = await self._corridors.get_delivery_methods(draft.destination_country)
+            supported = await self._corridors.get_delivery_methods(
+                draft.destination_country
+            )
             if method not in supported:
                 supported_labels = [format_delivery_method(m) for m in supported]
                 country_label = format_country(draft.destination_country)

@@ -10,15 +10,15 @@ ADK also auto-detects OTLP from environment variables:
 We call maybe_set_otel_providers() explicitly so the setup is centralised and
 testable, rather than relying purely on env-var detection.
 """
+
 from __future__ import annotations
 
 import base64
 import os
 
+from google.adk.telemetry.setup import OTelHooks, maybe_set_otel_providers
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-from google.adk.telemetry.setup import OTelHooks, maybe_set_otel_providers
 
 
 def setup_langfuse_otel(

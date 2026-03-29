@@ -1,8 +1,9 @@
 """Beneficiary repository implementations."""
+
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import Any
 
 from asgiref.sync import sync_to_async
 
@@ -11,7 +12,7 @@ from send_money.domain.enums import DeliveryMethod
 from send_money.domain.repositories import BeneficiaryRepository
 
 
-def _to_entity(record) -> Beneficiary:
+def _to_entity(record: Any) -> Beneficiary:
     delivery = None
     if record.delivery_method:
         try:
@@ -33,24 +34,28 @@ class DjangoBeneficiaryRepository(BeneficiaryRepository):
 
     async def create(self, beneficiary: Beneficiary) -> Beneficiary:
         @sync_to_async
-        def _create():
+        def _create() -> Beneficiary:
             from send_money.adapters.persistence.django_models import BeneficiaryRecord
+
             record = BeneficiaryRecord.objects.create(
                 id=beneficiary.id or str(uuid.uuid4()),
                 user_id=beneficiary.user_id,
                 name=beneficiary.name,
                 account_number=beneficiary.account_number,
                 country_code=beneficiary.country_code or "",
-                delivery_method=str(beneficiary.delivery_method) if beneficiary.delivery_method else "",
+                delivery_method=str(beneficiary.delivery_method)
+                if beneficiary.delivery_method
+                else "",
             )
             return _to_entity(record)
 
         return await _create()
 
-    async def get_by_id(self, beneficiary_id: str) -> Optional[Beneficiary]:
+    async def get_by_id(self, beneficiary_id: str) -> Beneficiary | None:
         @sync_to_async
-        def _get():
+        def _get() -> Beneficiary | None:
             from send_money.adapters.persistence.django_models import BeneficiaryRecord
+
             try:
                 return _to_entity(BeneficiaryRecord.objects.get(id=beneficiary_id))
             except BeneficiaryRecord.DoesNotExist:
@@ -60,31 +65,40 @@ class DjangoBeneficiaryRepository(BeneficiaryRepository):
 
     async def list_for_user(self, user_id: str) -> list[Beneficiary]:
         @sync_to_async
-        def _list():
+        def _list() -> list[Beneficiary]:
             from send_money.adapters.persistence.django_models import BeneficiaryRecord
-            return [_to_entity(r) for r in BeneficiaryRecord.objects.filter(user_id=user_id)]
+
+            return [
+                _to_entity(r) for r in BeneficiaryRecord.objects.filter(user_id=user_id)
+            ]
 
         return await _list()
 
-    async def find_by_name_and_user(self, user_id: str, name: str) -> Optional[Beneficiary]:
+    async def find_by_name_and_user(self, user_id: str, name: str) -> list[Beneficiary]:
         @sync_to_async
-        def _find():
+        def _find() -> list[Beneficiary]:
             from send_money.adapters.persistence.django_models import BeneficiaryRecord
-            try:
-                return _to_entity(BeneficiaryRecord.objects.get(user_id=user_id, name__iexact=name))
-            except BeneficiaryRecord.DoesNotExist:
-                return None
+
+            return [
+                _to_entity(r)
+                for r in BeneficiaryRecord.objects.filter(
+                    user_id=user_id, name__iexact=name
+                )
+            ]
 
         return await _find()
 
     async def update(self, beneficiary: Beneficiary) -> Beneficiary:
         @sync_to_async
-        def _update():
+        def _update() -> Beneficiary:
             from send_money.adapters.persistence.django_models import BeneficiaryRecord
+
             BeneficiaryRecord.objects.filter(id=beneficiary.id).update(
                 account_number=beneficiary.account_number,
                 country_code=beneficiary.country_code or "",
-                delivery_method=str(beneficiary.delivery_method) if beneficiary.delivery_method else "",
+                delivery_method=str(beneficiary.delivery_method)
+                if beneficiary.delivery_method
+                else "",
             )
             return beneficiary
 
@@ -98,11 +112,13 @@ class InMemoryBeneficiaryRepository(BeneficiaryRepository):
         self._store: dict[str, Beneficiary] = {}
 
     async def create(self, beneficiary: Beneficiary) -> Beneficiary:
-        record = beneficiary.model_copy(update={"id": beneficiary.id or str(uuid.uuid4())})
-        self._store[record.id] = record
+        record = beneficiary.model_copy(
+            update={"id": beneficiary.id or str(uuid.uuid4())}
+        )
+        self._store[record.id or ""] = record
         return record
 
-    async def get_by_id(self, beneficiary_id: str) -> Optional[Beneficiary]:
+    async def get_by_id(self, beneficiary_id: str) -> Beneficiary | None:
         return self._store.get(beneficiary_id)
 
     async def list_for_user(self, user_id: str) -> list[Beneficiary]:
@@ -111,13 +127,14 @@ class InMemoryBeneficiaryRepository(BeneficiaryRepository):
             key=lambda b: b.name.lower(),
         )
 
-    async def find_by_name_and_user(self, user_id: str, name: str) -> Optional[Beneficiary]:
+    async def find_by_name_and_user(self, user_id: str, name: str) -> list[Beneficiary]:
         name_lower = name.strip().lower()
-        for b in self._store.values():
-            if b.user_id == user_id and b.name.lower() == name_lower:
-                return b
-        return None
+        return [
+            b
+            for b in self._store.values()
+            if b.user_id == user_id and b.name.lower() == name_lower
+        ]
 
     async def update(self, beneficiary: Beneficiary) -> Beneficiary:
-        self._store[beneficiary.id] = beneficiary
+        self._store[beneficiary.id or ""] = beneficiary
         return beneficiary

@@ -6,6 +6,7 @@ Usage:
 Environment variables (see .env.example):
     GOOGLE_API_KEY, DB_*, ADK_DATABASE_URL, LANGFUSE_*, DJANGO_*
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -72,7 +73,7 @@ async def main() -> None:
     session = await session_service.create_session(
         app_name="send_money",
         user_id=user_id,
-        state={"transfer_draft": {}},
+        state={"transfer_draft": {}, "user_id": user_id},
     )
 
     print("Send Money Agent — type 'quit' to exit\n")

@@ -3,10 +3,10 @@
 These stand in for real external API calls.  Swap them in container.py for
 real implementations without touching any other code (Open/Closed principle).
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional
 
 from send_money.application.ports import ExchangeRateService, FeeService
 from send_money.domain.repositories import ExchangeRateRepository
@@ -20,6 +20,7 @@ _RATES: dict[str, Decimal] = {
     "PHP": Decimal("56.30"),
     "INR": Decimal("83.12"),
     "GBP": Decimal("0.79"),
+    "EUR": Decimal("0.92"),
     "USD": Decimal("1.00"),
 }
 
@@ -40,10 +41,14 @@ _FEES: dict[tuple[str, str], str] = {
 
 
 class SimulatedExchangeRateService(ExchangeRateService):
-    def __init__(self, exchange_rate_repository: Optional[ExchangeRateRepository] = None) -> None:
+    def __init__(
+        self, exchange_rate_repository: ExchangeRateRepository | None = None
+    ) -> None:
         self._repo = exchange_rate_repository
 
-    async def get_rate(self, source_currency: str, destination_currency: str) -> Decimal:
+    async def get_rate(
+        self, source_currency: str, destination_currency: str
+    ) -> Decimal:
         if source_currency == destination_currency:
             return Decimal("1.00")
 

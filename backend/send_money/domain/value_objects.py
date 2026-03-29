@@ -3,10 +3,12 @@ google.type.Money (units: int64, nanos: int32).
 
 No float arithmetic ever touches a monetary value.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -27,7 +29,7 @@ class Money:
     # ── Construction ────────────────────────────────────────
 
     @classmethod
-    def from_decimal(cls, amount: Decimal, currency_code: str) -> "Money":
+    def from_decimal(cls, amount: Decimal, currency_code: str) -> Money:
         """Create a Money value from a Python Decimal.
 
         The Decimal is quantised to nano precision (9 decimal places) before
@@ -41,7 +43,7 @@ class Money:
         return cls(units=units, nanos=nanos, currency_code=currency_code.upper())
 
     @classmethod
-    def from_proto(cls, proto_money: object) -> "Money":
+    def from_proto(cls, proto_money: object) -> Money:
         """Construct from a google.type.Money protobuf message."""
         return cls(
             units=int(proto_money.units),  # type: ignore[attr-defined]
@@ -50,7 +52,7 @@ class Money:
         )
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Money":
+    def from_dict(cls, d: dict[str, Any]) -> Money:
         """Reconstruct from a JSON-safe dict (as stored in ADK session state)."""
         return cls(
             units=int(d.get("units", 0)),
@@ -66,7 +68,7 @@ class Money:
 
     def to_proto(self) -> object:
         """Return a google.type.Money protobuf message."""
-        from google.type.money_pb2 import Money as MoneyProto  # type: ignore[import-untyped]
+        from google.type.money_pb2 import Money as MoneyProto
 
         return MoneyProto(
             units=self.units,
@@ -74,7 +76,7 @@ class Money:
             currency_code=self.currency_code,
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Return a JSON-safe dict suitable for ADK session state."""
         return {
             "units": self.units,

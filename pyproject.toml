@@ -18,10 +18,12 @@ dependencies = [
     "litellm>=1.72.0",
     "greenlet>=3.3.2",
     "pydantic>=2.12.5",
+
 ]
 
 [dependency-groups]
 dev = [
+    "ruff>=0.15.8",
     "mypy>=1.19.1",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",

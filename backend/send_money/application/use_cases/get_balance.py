@@ -1,4 +1,5 @@
 """GetBalanceUseCase — retrieve the current account balance."""
+
 from __future__ import annotations
 
 from send_money.domain.entities import UserAccount

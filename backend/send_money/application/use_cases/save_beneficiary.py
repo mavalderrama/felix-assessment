@@ -1,4 +1,5 @@
 """SaveBeneficiaryUseCase — create or update a saved recipient."""
+
 from __future__ import annotations
 
 import uuid
@@ -29,26 +30,42 @@ class SaveBeneficiaryUseCase:
         """
         name = name.strip()
         if len(name) < 2:
-            raise InvalidFieldError("beneficiary_name", "Name must be at least 2 characters.")
+            raise InvalidFieldError(
+                "beneficiary_name", "Name must be at least 2 characters."
+            )
 
         account_number = account_number.strip()
         if not account_number:
-            raise InvalidFieldError("beneficiary_account", "Account number cannot be empty.")
+            raise InvalidFieldError(
+                "beneficiary_account", "Account number cannot be empty."
+            )
 
         delivery: DeliveryMethod | None = None
         if delivery_method:
             try:
-                delivery = DeliveryMethod(delivery_method.strip().upper().replace(" ", "_"))
+                delivery = DeliveryMethod(
+                    delivery_method.strip().upper().replace(" ", "_")
+                )
             except ValueError:
                 pass
 
-        existing = await self._repo.find_by_name_and_user(user_id, name)
+        # Find existing entry matching name + account_number + delivery_method exactly.
+        # Different account or different delivery method → new entry.
+        existing_entries = await self._repo.find_by_name_and_user(user_id, name)
+        existing = next(
+            (
+                e
+                for e in existing_entries
+                if e.account_number == account_number and e.delivery_method == delivery
+            ),
+            None,
+        )
         if existing is not None:
-            updated = existing.model_copy(update={
-                "account_number": account_number,
-                "country_code": country_code.upper() or existing.country_code,
-                "delivery_method": delivery if delivery is not None else existing.delivery_method,
-            })
+            updated = existing.model_copy(
+                update={
+                    "country_code": country_code.upper() or existing.country_code,
+                }
+            )
             return await self._repo.update(updated)
 
         beneficiary = Beneficiary(

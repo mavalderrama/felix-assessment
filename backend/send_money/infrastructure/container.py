@@ -3,18 +3,30 @@
 django.setup() is called here before any ORM import so the container is safe
 to instantiate from any entry point (main.py, agent.py, tests).
 """
+
 from __future__ import annotations
 
 import os
+from typing import Any
 
-from send_money.adapters.persistence.audit_log_repository import DjangoAuditLogRepository
-from send_money.adapters.persistence.beneficiary_repository import DjangoBeneficiaryRepository
+from send_money.adapters.persistence.audit_log_repository import (
+    DjangoAuditLogRepository,
+)
+from send_money.adapters.persistence.beneficiary_repository import (
+    DjangoBeneficiaryRepository,
+)
 from send_money.adapters.persistence.corridor_repository import DjangoCorridorRepository
-from send_money.adapters.persistence.exchange_rate_repository import DjangoExchangeRateRepository
+from send_money.adapters.persistence.exchange_rate_repository import (
+    DjangoExchangeRateRepository,
+)
 from send_money.adapters.persistence.transfer_repository import DjangoTransferRepository
-from send_money.adapters.persistence.user_account_repository import DjangoUserAccountRepository
+from send_money.adapters.persistence.user_account_repository import (
+    DjangoUserAccountRepository,
+)
 from send_money.application.use_cases.add_funds import AddFundsUseCase
-from send_money.application.use_cases.collect_transfer_details import CollectTransferDetailsUseCase
+from send_money.application.use_cases.collect_transfer_details import (
+    CollectTransferDetailsUseCase,
+)
 from send_money.application.use_cases.confirm_transfer import ConfirmTransferUseCase
 from send_money.application.use_cases.create_account import CreateAccountUseCase
 from send_money.application.use_cases.get_balance import GetBalanceUseCase
@@ -51,7 +63,9 @@ class Container:
         self.beneficiary_repository = DjangoBeneficiaryRepository()
 
         # Simulated external services
-        self.exchange_rate_service = SimulatedExchangeRateService(self.exchange_rate_repository)
+        self.exchange_rate_service = SimulatedExchangeRateService(
+            self.exchange_rate_repository
+        )
         self.fee_service = SimulatedFeeService()
 
         # Use cases — constructor-injected
@@ -65,6 +79,7 @@ class Container:
             self.transfer_repository,
             self.audit_log_repository,
             self.user_account_repository,
+            self.exchange_rate_service,
         )
         self.corridors_uc = GetCorridorsUseCase(self.corridor_repository)
 
@@ -76,25 +91,27 @@ class Container:
 
         # Beneficiary use cases
         self.save_beneficiary_uc = SaveBeneficiaryUseCase(self.beneficiary_repository)
-        self.list_beneficiaries_uc = ListBeneficiariesUseCase(self.beneficiary_repository)
+        self.list_beneficiaries_uc = ListBeneficiariesUseCase(
+            self.beneficiary_repository
+        )
 
         # Observability (optional — skipped if keys are not configured)
         self._langfuse_client = self._build_langfuse_client()
 
     # ── Factory methods ──────────────────────────────────────
 
-    def create_session_service(self):
+    def create_session_service(self) -> Any:
         from django.conf import settings
         from google.adk.sessions import DatabaseSessionService
 
         return DatabaseSessionService(settings.ADK_DATABASE_URL)
 
-    def create_agent(self):
+    def create_agent(self) -> Any:
         from send_money.adapters.agent.agent_definition import create_send_money_agent
 
         return create_send_money_agent(self)
 
-    def create_app(self):
+    def create_app(self) -> Any:
         """Return an ADK App with the agent and optional Langfuse plugin."""
         from google.adk.apps.app import App
 
@@ -106,7 +123,7 @@ class Container:
 
     # ── Internal helpers ─────────────────────────────────────
 
-    def _build_langfuse_client(self):
+    def _build_langfuse_client(self) -> Any:
         from django.conf import settings
 
         if not settings.LANGFUSE_PUBLIC_KEY or not settings.LANGFUSE_SECRET_KEY:
@@ -129,9 +146,11 @@ class Container:
             secret_key=settings.LANGFUSE_SECRET_KEY,
         )
 
-    def _build_plugins(self) -> list:
+    def _build_plugins(self) -> list[Any]:
         if self._langfuse_client is None:
             return []
-        from send_money.adapters.observability.langfuse_plugin import LangfuseAuditPlugin
+        from send_money.adapters.observability.langfuse_plugin import (
+            LangfuseAuditPlugin,
+        )
 
         return [LangfuseAuditPlugin(self._langfuse_client)]

@@ -83,6 +83,21 @@ web: ## Start the ADK web UI (browser chat + tool-call inspector)
 test: ## Run the full test suite (110 tests, no DB or API key required)
 	uv run pytest backend/tests/ -q
 
+.PHONY: format
+format: ## Format codebase with ruff
+	uv run ruff format backend/ main.py
+
 .PHONY: lint
 lint: ## Lint the codebase with ruff
-	uv run ruff check backend/
+	uv run ruff check backend/ main.py
+
+.PHONY: typecheck
+typecheck: ## Type-check with mypy
+	uv run mypy backend/
+
+.PHONY: check
+check: lint typecheck test ## Run all checks (lint + typecheck + tests)
+
+.PHONY: pre-commit-install
+pre-commit-install: ## Install pre-commit hooks
+	uv run pre-commit install

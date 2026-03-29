@@ -1,4 +1,5 @@
 """ListBeneficiariesUseCase — retrieve saved recipients for a user."""
+
 from __future__ import annotations
 
 from send_money.domain.entities import Beneficiary

@@ -1,4 +1,5 @@
 """CreateAccountUseCase — register a new user account."""
+
 from __future__ import annotations
 
 import uuid
@@ -17,6 +18,7 @@ class CreateAccountUseCase:
         username = username.strip()
         if not username:
             from send_money.domain.errors import InvalidFieldError
+
             raise InvalidFieldError("username", "Username cannot be empty.")
 
         account = UserAccount(

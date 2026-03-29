@@ -1,7 +1,8 @@
 """Audit log repository — writes to the transfer_audit_logs table."""
+
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
 from asgiref.sync import sync_to_async
 
@@ -17,7 +18,7 @@ class DjangoAuditLogRepository(AuditLogRepository):
         action: str,
         langfuse_trace_id: str = "",
         langfuse_observation_id: str = "",
-        metadata: Optional[dict] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         @sync_to_async
         def _write() -> None:

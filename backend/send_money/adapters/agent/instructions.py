@@ -5,6 +5,10 @@ every turn, giving us control over how ``{transfer_draft}`` is resolved.
 This avoids a KeyError when ADK web creates a fresh session with empty state.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 _SEND_MONEY_TEMPLATE = """
 You are a Send Money Agent that helps users initiate international money transfers.
 You guide the user through a natural conversation to collect all required information.
@@ -25,10 +29,22 @@ Current transfer state:
 ━━━ SAVED BENEFICIARIES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • Once the user is authenticated and wants to send money, call
   get_saved_beneficiaries() to check for previously saved recipients.
-• If the user mentions a recipient name that matches a saved beneficiary,
-  pre-fill beneficiary_name, beneficiary_account, and optionally
-  destination_country and delivery_method by calling update_transfer_field()
-  for each — do NOT ask the user to re-enter these details.
+• IMPORTANT — the user's message determines which path to take:
+
+  A) User provides ONLY a name (e.g. "neyla") → call select_beneficiary().
+     - If status "selected": all fields were applied. Check missing_fields.
+     - If status "multiple_found": the name has multiple saved entries
+       (listed in "options"). Present the options to the user and ask which
+       one to use. Then call update_transfer_field() for the chosen values.
+
+  B) User provides a name AND an account number (e.g. "neyla, account: 123")
+     → this is a NEW or EXPLICIT entry. Do NOT call select_beneficiary().
+     Instead call update_transfer_field() TWICE: once for "beneficiary_name"
+     and once for "beneficiary_account". Then continue collecting the
+     remaining fields (destination_country, delivery_method, etc.) normally.
+     Even if the name matches a saved beneficiary, the user explicitly
+     provided a different account — treat it as a new recipient.
+
 • If no saved beneficiary matches (or the list is empty), ask the user for
   both the recipient's full name AND their account number (bank account,
   mobile wallet number, or similar identifier — the format depends on the
@@ -52,9 +68,10 @@ All six fields must be set before you can validate the transfer:
 • beneficiary_account  — the recipient's account number, mobile wallet number,
                          or other identifier for receiving funds.
                          Ask for this alongside the recipient's name.
-• delivery_method      — how the recipient collects the money:
-                         Bank Deposit, Mobile Wallet, or Cash Pickup.
-                         Availability varies by country.
+• delivery_method      — how the recipient collects the money.
+                         Options vary by country — you MUST call
+                         get_delivery_methods() to see which are available
+                         before asking the user.
 
 ━━━ WORKFLOW ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Check transfer_draft above to see what is already set.
@@ -68,6 +85,10 @@ All six fields must be set before you can validate the transfer:
    • If the user provides name and account together (e.g. "name: Maria, account 123"),
      call update_transfer_field() twice — once for "beneficiary_name" and once for
      "beneficiary_account".
+3b. When destination_country is set and delivery_method is still missing,
+    call get_delivery_methods(country_code) FIRST, then present ONLY the
+    returned methods to the user. NEVER list delivery methods from memory
+    or from these instructions — always use the tool result.
 4. Once all required fields are present, call validate_transfer() automatically.
 5. Present the summary to the user (amount, fee, exchange rate, receive amount).
 6. Ask the user to confirm.  When they confirm, call confirm_transfer().
@@ -116,7 +137,7 @@ All six fields must be set before you can validate the transfer:
 """.strip()
 
 
-def _summarise_draft(state: dict) -> str:
+def _summarise_draft(state: dict[str, Any]) -> str:
     """Convert the raw transfer_draft state dict into a readable summary."""
     d = state.get("transfer_draft", {})
     if not d:
@@ -125,11 +146,11 @@ def _summarise_draft(state: dict) -> str:
     lines = []
     mapping = {
         "destination_country": ("destination_country", lambda v: v),
-        "amount_units":        ("amount",              lambda v: None),  # handled below
-        "amount_currency":     ("currency",            lambda v: v),
-        "beneficiary_name":    ("beneficiary_name",    lambda v: v),
+        "amount_units": ("amount", lambda v: None),  # handled below
+        "amount_currency": ("currency", lambda v: v),
+        "beneficiary_name": ("beneficiary_name", lambda v: v),
         "beneficiary_account": ("beneficiary_account", lambda v: v),
-        "delivery_method":     ("delivery_method",     lambda v: v),
+        "delivery_method": ("delivery_method", lambda v: v),
     }
 
     # Amount: combine units + nanos into a decimal string
@@ -138,6 +159,7 @@ def _summarise_draft(state: dict) -> str:
     currency = d.get("amount_currency")
     if units is not None and currency:
         from decimal import Decimal
+
         amount = Decimal(units) + Decimal(nanos) / Decimal("1000000000")
         lines.append(f"  amount:              {amount} {currency}")
     elif units is not None:
@@ -158,10 +180,23 @@ def _summarise_draft(state: dict) -> str:
     return "\n" + "\n".join(lines)
 
 
-def build_instruction(context) -> str:
+def build_instruction(context: Any) -> str:
     """Callable instruction provider for ADK.
 
     Renders a human-readable transfer state summary so the LLM can clearly
     see which fields are already set without parsing internal field names.
+    Includes authentication status so the agent skips the login prompt when
+    the user is already authenticated (e.g. CLI mode).
     """
-    return _SEND_MONEY_TEMPLATE.replace("{transfer_draft}", _summarise_draft(context.state))
+    user_id = context.state.get("user_id", "")
+    username = context.state.get("username", "")
+
+    if user_id:
+        auth_line = f"authenticated: yes  (user_id={user_id}"
+        auth_line += f", username={username})" if username else ")"
+    else:
+        auth_line = "authenticated: no"
+
+    summary = _summarise_draft(context.state)
+    state_block = f"  {auth_line}\n{summary}"
+    return _SEND_MONEY_TEMPLATE.replace("{transfer_draft}", state_block)

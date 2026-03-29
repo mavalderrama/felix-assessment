@@ -1,10 +1,15 @@
-"""Unit tests for account-related use cases: CreateAccount, Login, AddFunds, GetBalance."""
+"""Unit tests for account-related use cases: CreateAccount, Login, AddFunds, GetBalance."""  # noqa: E501
+
 from __future__ import annotations
 
 from decimal import Decimal
 
 import pytest
 
+from send_money.application.use_cases.add_funds import AddFundsUseCase
+from send_money.application.use_cases.create_account import CreateAccountUseCase
+from send_money.application.use_cases.get_balance import GetBalanceUseCase
+from send_money.application.use_cases.login import LoginUseCase
 from send_money.domain.entities import UserAccount
 from send_money.domain.errors import (
     AuthenticationError,
@@ -15,13 +20,9 @@ from send_money.domain.errors import (
 )
 from send_money.domain.repositories import UserAccountRepository
 from send_money.domain.value_objects import Money
-from send_money.application.use_cases.add_funds import AddFundsUseCase
-from send_money.application.use_cases.create_account import CreateAccountUseCase
-from send_money.application.use_cases.get_balance import GetBalanceUseCase
-from send_money.application.use_cases.login import LoginUseCase
-
 
 # ── In-memory fake ────────────────────────────────────────────────────────────
+
 
 class InMemoryUserAccountRepository(UserAccountRepository):
     def __init__(self) -> None:
@@ -31,8 +32,8 @@ class InMemoryUserAccountRepository(UserAccountRepository):
     async def create(self, account: UserAccount) -> UserAccount:
         if account.username in self._by_username:
             raise UsernameAlreadyExistsError(account.username)
-        self._by_id[account.id] = account
-        self._by_username[account.username] = account.id
+        self._by_id[account.id] = account  # type: ignore[index]
+        self._by_username[account.username] = account.id  # type: ignore[assignment]
         return account
 
     async def get_by_username(self, username: str) -> UserAccount | None:
@@ -44,186 +45,255 @@ class InMemoryUserAccountRepository(UserAccountRepository):
 
     async def add_funds(self, user_id: str, units: int, nanos: int) -> UserAccount:
         account = self._by_id[user_id]
-        current = Money(units=account.balance_units, nanos=account.balance_nanos, currency_code="")
+        current = Money(
+            units=account.balance_units, nanos=account.balance_nanos, currency_code=""
+        )
         delta = Money(units=units, nanos=nanos, currency_code="")
-        new_balance = Money.from_decimal(current.to_decimal() + delta.to_decimal(), account.balance_currency)
-        updated = account.model_copy(update={"balance_units": new_balance.units, "balance_nanos": new_balance.nanos})
+        new_balance = Money.from_decimal(
+            current.to_decimal() + delta.to_decimal(), account.balance_currency
+        )
+        updated = account.model_copy(
+            update={
+                "balance_units": new_balance.units,
+                "balance_nanos": new_balance.nanos,
+            }
+        )
         self._by_id[user_id] = updated
         return updated
 
     async def deduct_funds(self, user_id: str, units: int, nanos: int) -> UserAccount:
         account = self._by_id[user_id]
-        current = Money(units=account.balance_units, nanos=account.balance_nanos, currency_code="")
+        current = Money(
+            units=account.balance_units, nanos=account.balance_nanos, currency_code=""
+        )
         delta = Money(units=units, nanos=nanos, currency_code="")
         if current.to_decimal() < delta.to_decimal():
-            raise InsufficientFundsError(str(delta.to_decimal()), str(current.to_decimal()))
-        new_balance = Money.from_decimal(current.to_decimal() - delta.to_decimal(), account.balance_currency)
-        updated = account.model_copy(update={"balance_units": new_balance.units, "balance_nanos": new_balance.nanos})
+            raise InsufficientFundsError(
+                str(delta.to_decimal()), str(current.to_decimal())
+            )
+        new_balance = Money.from_decimal(
+            current.to_decimal() - delta.to_decimal(), account.balance_currency
+        )
+        updated = account.model_copy(
+            update={
+                "balance_units": new_balance.units,
+                "balance_nanos": new_balance.nanos,
+            }
+        )
         self._by_id[user_id] = updated
         return updated
 
 
 @pytest.fixture
-def repo():
+def repo() -> InMemoryUserAccountRepository:
     return InMemoryUserAccountRepository()
 
 
 # ── CreateAccountUseCase ──────────────────────────────────────────────────────
 
+
 class TestCreateAccountUseCase:
     @pytest.fixture
-    def uc(self, repo):
+    def uc(self, repo: InMemoryUserAccountRepository) -> CreateAccountUseCase:
         return CreateAccountUseCase(repo)
 
     @pytest.mark.asyncio
-    async def test_creates_account_and_returns_it(self, uc):
+    async def test_creates_account_and_returns_it(
+        self, uc: CreateAccountUseCase
+    ) -> None:
         account = await uc.execute("alice", "secret123")
         assert account.username == "alice"
         assert account.id is not None
 
     @pytest.mark.asyncio
-    async def test_password_is_hashed_not_stored_plaintext(self, uc):
+    async def test_password_is_hashed_not_stored_plaintext(
+        self, uc: CreateAccountUseCase
+    ) -> None:
         account = await uc.execute("bob", "my-password")
         assert account.password_hash != "my-password"
         assert "$" in account.password_hash  # salt$hash format
 
     @pytest.mark.asyncio
-    async def test_duplicate_username_raises(self, uc):
+    async def test_duplicate_username_raises(self, uc: CreateAccountUseCase) -> None:
         await uc.execute("carol", "pass1")
         with pytest.raises(UsernameAlreadyExistsError) as exc_info:
             await uc.execute("carol", "pass2")
         assert "carol" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_empty_username_raises(self, uc):
+    async def test_empty_username_raises(self, uc: CreateAccountUseCase) -> None:
         with pytest.raises(InvalidFieldError):
             await uc.execute("", "password")
 
     @pytest.mark.asyncio
-    async def test_whitespace_username_raises(self, uc):
+    async def test_whitespace_username_raises(self, uc: CreateAccountUseCase) -> None:
         with pytest.raises(InvalidFieldError):
             await uc.execute("   ", "password")
 
     @pytest.mark.asyncio
-    async def test_default_balance_is_zero(self, uc, repo):
+    async def test_default_balance_is_zero(
+        self, uc: CreateAccountUseCase, repo: InMemoryUserAccountRepository
+    ) -> None:
         account = await uc.execute("dave", "pass")
-        stored = await repo.get_by_id(account.id)
+        stored = await repo.get_by_id(account.id)  # type: ignore[arg-type]
+        assert stored is not None
         assert stored.balance_units == 0
         assert stored.balance_nanos == 0
 
     @pytest.mark.asyncio
-    async def test_strips_whitespace_from_username(self, uc):
+    async def test_strips_whitespace_from_username(
+        self, uc: CreateAccountUseCase
+    ) -> None:
         account = await uc.execute("  eve  ", "pass")
         assert account.username == "eve"
 
 
 # ── LoginUseCase ──────────────────────────────────────────────────────────────
 
+
 class TestLoginUseCase:
     @pytest.fixture
-    def uc(self, repo):
+    def uc(self, repo: InMemoryUserAccountRepository) -> LoginUseCase:
         return LoginUseCase(repo)
 
     @pytest.fixture
-    async def existing_account(self, repo):
+    async def existing_account(
+        self, repo: InMemoryUserAccountRepository
+    ) -> UserAccount:
         create_uc = CreateAccountUseCase(repo)
         return await create_uc.execute("frank", "correct-password")
 
     @pytest.mark.asyncio
-    async def test_login_returns_account(self, uc, existing_account):
+    async def test_login_returns_account(
+        self, uc: LoginUseCase, existing_account: UserAccount
+    ) -> None:
         account = await uc.execute("frank", "correct-password")
         assert account.username == "frank"
         assert account.id == existing_account.id
 
     @pytest.mark.asyncio
-    async def test_wrong_password_raises_authentication_error(self, uc, existing_account):
+    async def test_wrong_password_raises_authentication_error(
+        self, uc: LoginUseCase, existing_account: UserAccount
+    ) -> None:
         with pytest.raises(AuthenticationError):
             await uc.execute("frank", "wrong-password")
 
     @pytest.mark.asyncio
-    async def test_nonexistent_user_raises_authentication_error(self, uc):
+    async def test_nonexistent_user_raises_authentication_error(
+        self, uc: LoginUseCase
+    ) -> None:
         with pytest.raises(AuthenticationError):
             await uc.execute("nobody", "any-password")
 
     @pytest.mark.asyncio
-    async def test_empty_username_raises_authentication_error(self, uc):
+    async def test_empty_username_raises_authentication_error(
+        self, uc: LoginUseCase
+    ) -> None:
         with pytest.raises(AuthenticationError):
             await uc.execute("", "password")
 
 
 # ── AddFundsUseCase ───────────────────────────────────────────────────────────
 
+
 class TestAddFundsUseCase:
     @pytest.fixture
-    def uc(self, repo):
+    def uc(self, repo: InMemoryUserAccountRepository) -> AddFundsUseCase:
         return AddFundsUseCase(repo)
 
     @pytest.fixture
-    async def account_id(self, repo):
+    async def account_id(self, repo: InMemoryUserAccountRepository) -> str:
         create_uc = CreateAccountUseCase(repo)
         account = await create_uc.execute("grace", "pass")
-        return account.id
+        return account.id  # type: ignore[return-value]
 
     @pytest.mark.asyncio
-    async def test_adds_funds_increases_balance(self, uc, repo, account_id):
+    async def test_adds_funds_increases_balance(
+        self, uc: AddFundsUseCase, repo: InMemoryUserAccountRepository, account_id: str
+    ) -> None:
         updated = await uc.execute(account_id, "500", "USD")
-        balance = Money(units=updated.balance_units, nanos=updated.balance_nanos, currency_code="USD")
+        balance = Money(
+            units=updated.balance_units,
+            nanos=updated.balance_nanos,
+            currency_code="USD",
+        )
         assert balance.to_decimal() == Decimal("500")
 
     @pytest.mark.asyncio
-    async def test_adds_fractional_funds(self, uc, repo, account_id):
+    async def test_adds_fractional_funds(
+        self, uc: AddFundsUseCase, repo: InMemoryUserAccountRepository, account_id: str
+    ) -> None:
         updated = await uc.execute(account_id, "99.99", "USD")
-        balance = Money(units=updated.balance_units, nanos=updated.balance_nanos, currency_code="USD")
+        balance = Money(
+            units=updated.balance_units,
+            nanos=updated.balance_nanos,
+            currency_code="USD",
+        )
         assert balance.to_decimal() == Decimal("99.99")
 
     @pytest.mark.asyncio
-    async def test_add_zero_raises(self, uc, account_id):
+    async def test_add_zero_raises(self, uc: AddFundsUseCase, account_id: str) -> None:
         with pytest.raises(InvalidFieldError):
             await uc.execute(account_id, "0", "USD")
 
     @pytest.mark.asyncio
-    async def test_add_negative_raises(self, uc, account_id):
+    async def test_add_negative_raises(
+        self, uc: AddFundsUseCase, account_id: str
+    ) -> None:
         with pytest.raises(InvalidFieldError):
             await uc.execute(account_id, "-100", "USD")
 
     @pytest.mark.asyncio
-    async def test_add_non_numeric_raises(self, uc, account_id):
+    async def test_add_non_numeric_raises(
+        self, uc: AddFundsUseCase, account_id: str
+    ) -> None:
         with pytest.raises(InvalidFieldError):
             await uc.execute(account_id, "abc", "USD")
 
     @pytest.mark.asyncio
-    async def test_add_funds_twice_accumulates(self, uc, repo, account_id):
+    async def test_add_funds_twice_accumulates(
+        self, uc: AddFundsUseCase, repo: InMemoryUserAccountRepository, account_id: str
+    ) -> None:
         await uc.execute(account_id, "100", "USD")
         updated = await uc.execute(account_id, "200", "USD")
-        balance = Money(units=updated.balance_units, nanos=updated.balance_nanos, currency_code="USD")
+        balance = Money(
+            units=updated.balance_units,
+            nanos=updated.balance_nanos,
+            currency_code="USD",
+        )
         assert balance.to_decimal() == Decimal("300")
 
 
 # ── GetBalanceUseCase ─────────────────────────────────────────────────────────
 
+
 class TestGetBalanceUseCase:
     @pytest.fixture
-    def uc(self, repo):
+    def uc(self, repo: InMemoryUserAccountRepository) -> GetBalanceUseCase:
         return GetBalanceUseCase(repo)
 
     @pytest.fixture
-    async def account_id(self, repo):
+    async def account_id(self, repo: InMemoryUserAccountRepository) -> str:
         create_uc = CreateAccountUseCase(repo)
         account = await create_uc.execute("henry", "pass")
-        return account.id
+        return account.id  # type: ignore[return-value]
 
     @pytest.mark.asyncio
-    async def test_returns_account(self, uc, account_id):
+    async def test_returns_account(
+        self, uc: GetBalanceUseCase, account_id: str
+    ) -> None:
         account = await uc.execute(account_id)
         assert account.username == "henry"
 
     @pytest.mark.asyncio
-    async def test_initial_balance_is_zero(self, uc, account_id):
+    async def test_initial_balance_is_zero(
+        self, uc: GetBalanceUseCase, account_id: str
+    ) -> None:
         account = await uc.execute(account_id)
         assert account.balance_units == 0
         assert account.balance_nanos == 0
 
     @pytest.mark.asyncio
-    async def test_nonexistent_user_raises(self, uc):
+    async def test_nonexistent_user_raises(self, uc: GetBalanceUseCase) -> None:
         with pytest.raises(DomainError):
             await uc.execute("does-not-exist")

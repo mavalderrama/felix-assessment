@@ -1,9 +1,9 @@
 """User account repository implementation using Django ORM."""
+
 from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Optional
 
 from asgiref.sync import sync_to_async
 
@@ -18,6 +18,7 @@ class DjangoUserAccountRepository(UserAccountRepository):
         @sync_to_async
         def _create() -> UserAccount:
             from django.db import IntegrityError
+
             from send_money.adapters.persistence.django_models import UserAccountRecord
 
             if not account.id:
@@ -36,9 +37,9 @@ class DjangoUserAccountRepository(UserAccountRepository):
 
         return await _create()
 
-    async def get_by_username(self, username: str) -> Optional[UserAccount]:
+    async def get_by_username(self, username: str) -> UserAccount | None:
         @sync_to_async
-        def _get() -> Optional[UserAccount]:
+        def _get() -> UserAccount | None:
             from send_money.adapters.persistence.django_models import UserAccountRecord
 
             try:
@@ -49,9 +50,9 @@ class DjangoUserAccountRepository(UserAccountRepository):
 
         return await _get()
 
-    async def get_by_id(self, user_id: str) -> Optional[UserAccount]:
+    async def get_by_id(self, user_id: str) -> UserAccount | None:
         @sync_to_async
-        def _get() -> Optional[UserAccount]:
+        def _get() -> UserAccount | None:
             from send_money.adapters.persistence.django_models import UserAccountRecord
 
             try:
@@ -66,6 +67,7 @@ class DjangoUserAccountRepository(UserAccountRepository):
         @sync_to_async
         def _add() -> UserAccount:
             from django.db import transaction
+
             from send_money.adapters.persistence.django_models import UserAccountRecord
 
             with transaction.atomic():
@@ -81,6 +83,7 @@ class DjangoUserAccountRepository(UserAccountRepository):
         @sync_to_async
         def _deduct() -> UserAccount:
             from django.db import transaction
+
             from send_money.adapters.persistence.django_models import UserAccountRecord
 
             with transaction.atomic():
@@ -96,6 +99,7 @@ class DjangoUserAccountRepository(UserAccountRepository):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _balance_to_decimal(units: int, nanos: int) -> Decimal:
     money = Money(units=units, nanos=nanos, currency_code="")

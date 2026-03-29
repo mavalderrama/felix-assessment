@@ -1,26 +1,27 @@
 """Unit tests for domain password hashing utilities."""
+
 from __future__ import annotations
 
 from send_money.domain.auth import hash_password, verify_password
 
 
-def test_hash_and_verify_correct_password():
+def test_hash_and_verify_correct_password() -> None:
     stored = hash_password("my-secret-123")
     assert verify_password("my-secret-123", stored) is True
 
 
-def test_verify_wrong_password_returns_false():
+def test_verify_wrong_password_returns_false() -> None:
     stored = hash_password("correct-horse-battery")
     assert verify_password("wrong-password", stored) is False
 
 
-def test_hash_produces_different_salts():
+def test_hash_produces_different_salts() -> None:
     h1 = hash_password("same-password")
     h2 = hash_password("same-password")
     assert h1 != h2  # different salts → different outputs
 
 
-def test_hash_format_is_salt_dollar_hash():
+def test_hash_format_is_salt_dollar_hash() -> None:
     stored = hash_password("test")
     parts = stored.split("$")
     assert len(parts) == 2
@@ -31,17 +32,17 @@ def test_hash_format_is_salt_dollar_hash():
     assert len(hash_hex) == 64
 
 
-def test_verify_empty_password():
+def test_verify_empty_password() -> None:
     stored = hash_password("")
     assert verify_password("", stored) is True
     assert verify_password("anything", stored) is False
 
 
-def test_verify_malformed_stored_value_returns_false():
+def test_verify_malformed_stored_value_returns_false() -> None:
     assert verify_password("test", "not-a-valid-hash") is False
 
 
-def test_verify_unicode_password():
+def test_verify_unicode_password() -> None:
     stored = hash_password("contraseña-segura-日本語")
     assert verify_password("contraseña-segura-日本語", stored) is True
     assert verify_password("contrasena-segura", stored) is False

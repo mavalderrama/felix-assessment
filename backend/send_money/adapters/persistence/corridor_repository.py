@@ -1,7 +1,8 @@
 """Corridor repository implementations."""
+
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
 from asgiref.sync import sync_to_async
 
@@ -38,9 +39,9 @@ class DjangoCorridorRepository(CorridorRepository):
 
         return await _query()
 
-    async def get_destination_currency(self, country_code: str) -> Optional[str]:
+    async def get_destination_currency(self, country_code: str) -> str | None:
         @sync_to_async
-        def _query() -> Optional[str]:
+        def _query() -> str | None:
             from send_money.adapters.persistence.django_models import Corridor
 
             corridor = (
@@ -57,11 +58,13 @@ class DjangoCorridorRepository(CorridorRepository):
         def _query() -> bool:
             from send_money.adapters.persistence.django_models import Corridor
 
-            return Corridor.objects.filter(
-                country_code=country_code,
-                delivery_method=delivery_method,
-                is_active=True,
-            ).exists()
+            return bool(
+                Corridor.objects.filter(
+                    country_code=country_code,
+                    delivery_method=delivery_method,
+                    is_active=True,
+                ).exists()
+            )
 
         return await _query()
 
@@ -69,8 +72,11 @@ class DjangoCorridorRepository(CorridorRepository):
 class InMemoryCorridorRepository(CorridorRepository):
     """In-memory corridor repository for tests — no database required."""
 
-    _CORRIDORS: dict[str, dict] = {
-        "MX": {"methods": ["BANK_DEPOSIT", "CASH_PICKUP", "MOBILE_WALLET"], "currency": "MXN"},
+    _CORRIDORS: dict[str, dict[str, Any]] = {
+        "MX": {
+            "methods": ["BANK_DEPOSIT", "CASH_PICKUP", "MOBILE_WALLET"],
+            "currency": "MXN",
+        },
         "CO": {"methods": ["BANK_DEPOSIT", "CASH_PICKUP"], "currency": "COP"},
         "GT": {"methods": ["BANK_DEPOSIT", "CASH_PICKUP"], "currency": "GTQ"},
         "PH": {"methods": ["BANK_DEPOSIT", "MOBILE_WALLET"], "currency": "PHP"},
@@ -82,9 +88,9 @@ class InMemoryCorridorRepository(CorridorRepository):
         return sorted(self._CORRIDORS.keys())
 
     async def get_delivery_methods(self, country_code: str) -> list[str]:
-        return self._CORRIDORS.get(country_code, {}).get("methods", [])
+        return list(self._CORRIDORS.get(country_code, {}).get("methods", []))
 
-    async def get_destination_currency(self, country_code: str) -> Optional[str]:
+    async def get_destination_currency(self, country_code: str) -> str | None:
         return self._CORRIDORS.get(country_code, {}).get("currency")
 
     async def is_supported(self, country_code: str, delivery_method: str) -> bool:

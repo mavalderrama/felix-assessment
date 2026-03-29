@@ -11,11 +11,12 @@ Two ADK callback functions are exported:
   Validates tool arguments before a tool executes.  Returns an error dict
   to skip the real tool call when values are out-of-bounds or malicious.
 """
+
 from __future__ import annotations
 
 import re
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional
+from typing import Any
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ _INJECTION_PATTERNS: list[re.Pattern[str]] = [
         r"your\s+new\s+(role|persona|instructions?)\s+",
         r"system\s*:\s*",
         r"\bjailbreak\b",
-        r"\bDAN\b",                       # "Do Anything Now"
+        r"\bDAN\b",  # "Do Anything Now"
         r"override\s+(your\s+)?(previous\s+)?instructions?",
         r"reveal\s+(your\s+)?(system\s+)?prompt",
         r"print\s+(your\s+)?(system\s+)?prompt",
@@ -69,20 +70,23 @@ _CODE_INJECTION_MARKERS = [
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _extract_last_user_text(llm_request) -> str:
+
+def _extract_last_user_text(llm_request: Any) -> str:
     """Return the text of the last user-role content in the request, or ''."""
     for content in reversed(llm_request.contents):
         if getattr(content, "role", None) == "user":
             parts = getattr(content, "parts", []) or []
-            texts = [getattr(p, "text", None) for p in parts if getattr(p, "text", None)]
+            texts: list[str] = [
+                str(getattr(p, "text", "")) for p in parts if getattr(p, "text", None)
+            ]
             return " ".join(texts)
     return ""
 
 
-def _blocking_response(message: str):
+def _blocking_response(message: str) -> Any:
     """Build a canned LlmResponse that replaces the real model call."""
-    from google.genai import types
     from google.adk.models.llm_response import LlmResponse
+    from google.genai import types
 
     return LlmResponse(
         content=types.Content(
@@ -94,7 +98,8 @@ def _blocking_response(message: str):
 
 # ── Public callbacks ──────────────────────────────────────────────────────────
 
-def check_user_input(callback_context, llm_request) -> Optional[object]:
+
+def check_user_input(callback_context: Any, llm_request: Any) -> Any:
     """before_model_callback — block injection/abuse before the LLM is called.
 
     Returns an LlmResponse to short-circuit the model call, or None to proceed.
@@ -119,7 +124,9 @@ def check_user_input(callback_context, llm_request) -> Optional[object]:
     return None
 
 
-def check_tool_args(tool, args: dict[str, Any], tool_context) -> Optional[dict]:
+def check_tool_args(
+    tool: Any, args: dict[str, Any], tool_context: Any
+) -> dict[str, Any] | None:
     """before_tool_callback — validate tool arguments before execution.
 
     Returns an error dict to skip the tool call, or None to proceed.
@@ -134,7 +141,8 @@ def check_tool_args(tool, args: dict[str, Any], tool_context) -> Optional[dict]:
             return {
                 "status": "error",
                 "message": (
-                    f"Field value is too long (max {_MAX_FIELD_VALUE_LENGTH} characters). "
+                    f"Field value is too long "
+                    f"(max {_MAX_FIELD_VALUE_LENGTH} characters). "
                     "Please provide a shorter value."
                 ),
             }

@@ -3,6 +3,7 @@
 When ADK's CLI loads this module it looks for a module-level `root_agent`
 attribute.  The Container boots Django and wires all dependencies.
 """
+
 from __future__ import annotations
 
 from send_money.infrastructure.container import Container

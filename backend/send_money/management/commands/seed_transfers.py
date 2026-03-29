@@ -8,11 +8,13 @@ These are realistic past transfers that populate the DB so a live demo
 can query the transfers table and show historical data alongside new
 agent-created transfers.
 """
+
 from __future__ import annotations
 
 import uuid
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -42,7 +44,7 @@ FEES = {
 }
 
 # Synthetic transfers — diverse countries, methods, amounts, and recipients
-TRANSFERS = [
+TRANSFERS: list[dict[str, Any]] = [
     {
         "destination_country": "MX",
         "amount": Decimal("500.00"),
@@ -142,28 +144,34 @@ def _confirmation_code(index: int) -> str:
 
 def _dest_currency(country: str) -> str:
     mapping = {
-        "MX": "MXN", "CO": "COP", "GT": "GTQ",
-        "PH": "PHP", "IN": "INR", "GB": "GBP",
+        "MX": "MXN",
+        "CO": "COP",
+        "GT": "GTQ",
+        "PH": "PHP",
+        "IN": "INR",
+        "GB": "GBP",
     }
     return mapping[country]
 
 
-class Command(BaseCommand):
+class Command(BaseCommand):  # type: ignore[misc]
     help = "Seed the transfers table with synthetic historical records for demos."
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
             "--clear",
             action="store_true",
             help="Delete all existing transfers before seeding.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         from send_money.adapters.persistence.django_models import TransferRecord
 
         if options["clear"]:
             deleted, _ = TransferRecord.objects.all().delete()
-            self.stdout.write(self.style.WARNING(f"Deleted {deleted} existing transfer(s)."))
+            self.stdout.write(
+                self.style.WARNING(f"Deleted {deleted} existing transfer(s).")
+            )
 
         now = timezone.now()
         created = 0
@@ -177,7 +185,9 @@ class Command(BaseCommand):
             rate = RATES[dest_currency]
             fee = FEES.get((country, method), Decimal("2.99"))
             receive_amount = (amount * rate).quantize(Decimal("0.0001"))
-            idempotency_key = f"demo-session:{country}:{int(amount)}:{t['beneficiary_name']}"
+            idempotency_key = (
+                f"demo-session:{country}:{int(amount)}:{t['beneficiary_name']}"
+            )
 
             _, was_created = TransferRecord.objects.get_or_create(
                 idempotency_key=idempotency_key,
@@ -204,6 +214,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Seeded {created} new transfer(s). Total: {TransferRecord.objects.count()}."
+                f"Seeded {created} new transfer(s). "
+                f"Total: {TransferRecord.objects.count()}."
             )
         )

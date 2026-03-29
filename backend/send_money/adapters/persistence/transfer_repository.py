@@ -3,10 +3,10 @@
 Uses select_for_update() + transaction.atomic() for atomic idempotency — the
 same guarantee as a raw SELECT FOR UPDATE in PostgreSQL.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional
 
 from asgiref.sync import sync_to_async
 
@@ -20,6 +20,7 @@ class DjangoTransferRepository(TransferRepository):
         @sync_to_async
         def _save() -> TransferDraft:
             from django.db import transaction
+
             from send_money.adapters.persistence.django_models import TransferRecord
 
             with transaction.atomic():
@@ -63,7 +64,11 @@ class DjangoTransferRepository(TransferRepository):
         @sync_to_async
         def _save_and_deduct() -> TransferDraft:
             from django.db import transaction
-            from send_money.adapters.persistence.django_models import TransferRecord, UserAccountRecord
+
+            from send_money.adapters.persistence.django_models import (
+                TransferRecord,
+                UserAccountRecord,
+            )
             from send_money.domain.errors import InsufficientFundsError
 
             with transaction.atomic():
@@ -71,7 +76,9 @@ class DjangoTransferRepository(TransferRepository):
                 account = UserAccountRecord.objects.select_for_update().get(id=user_id)
                 deduct_amount = _money_to_decimal(deduct_units, deduct_nanos)
                 if account.balance < deduct_amount:
-                    raise InsufficientFundsError(str(deduct_amount), str(account.balance))
+                    raise InsufficientFundsError(
+                        str(deduct_amount), str(account.balance)
+                    )
                 account.balance -= deduct_amount
                 account.save(update_fields=["balance"])
 
@@ -108,9 +115,9 @@ class DjangoTransferRepository(TransferRepository):
 
         return await _save_and_deduct()
 
-    async def get_by_id(self, transfer_id: str) -> Optional[TransferDraft]:
+    async def get_by_id(self, transfer_id: str) -> TransferDraft | None:
         @sync_to_async
-        def _get() -> Optional[TransferDraft]:
+        def _get() -> TransferDraft | None:
             from send_money.adapters.persistence.django_models import TransferRecord
 
             try:
@@ -124,14 +131,15 @@ class DjangoTransferRepository(TransferRepository):
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _money_to_decimal(units: Optional[int], nanos: Optional[int]) -> Decimal:
+
+def _money_to_decimal(units: int | None, nanos: int | None) -> Decimal:
     if units is None:
         return Decimal("0")
     money = Money(units=units, nanos=nanos or 0, currency_code="")
     return money.to_decimal().quantize(Decimal("0.000000001"))
 
 
-def _exchange_rate_decimal(draft: TransferDraft) -> Optional[Decimal]:
+def _exchange_rate_decimal(draft: TransferDraft) -> Decimal | None:
     if draft.exchange_rate_units is None:
         return None
     money = Money(
@@ -161,13 +169,13 @@ def _to_entity(record: object) -> TransferDraft:
         amount_nanos=amount_money.nanos,
         amount_currency=r.amount_currency,
         beneficiary_name=r.beneficiary_name,
-        delivery_method=r.delivery_method,  # type: ignore[arg-type]
+        delivery_method=r.delivery_method,
         fee_units=fee_money.units,
         fee_nanos=fee_money.nanos,
         receive_amount_units=receive_money.units if receive_money else None,
         receive_amount_nanos=receive_money.nanos if receive_money else None,
         destination_currency=r.receive_currency or None,
-        status=r.status,  # type: ignore[arg-type]
+        status=r.status,
         confirmation_code=r.confirmation_code or None,
         session_id=r.session_id or None,
         user_id=r.user_id or None,

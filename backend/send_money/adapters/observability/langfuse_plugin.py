@@ -7,6 +7,7 @@ and token usage automatically.  This plugin supplements that with:
   • field_completeness score at the end of each invocation
   • Session → user mapping for compliance audit trails
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -14,15 +15,18 @@ from typing import TYPE_CHECKING, Any
 from google.adk.plugins.base_plugin import BasePlugin
 
 if TYPE_CHECKING:
-    from google.adk.agents.base_agent import BaseAgent
-    from google.adk.agents.callback_context import CallbackContext
     from google.adk.agents.invocation_context import InvocationContext
     from google.adk.tools.base_tool import BaseTool
     from google.adk.tools.tool_context import ToolContext
 
 
 _AUDIT_TOOLS = {"update_transfer_field", "validate_transfer", "confirm_transfer"}
-_REQUIRED_FIELDS = ["destination_country", "amount_currency", "beneficiary_name", "delivery_method"]
+_REQUIRED_FIELDS = [
+    "destination_country",
+    "amount_currency",
+    "beneficiary_name",
+    "delivery_method",
+]
 
 
 class LangfuseAuditPlugin(BasePlugin):
@@ -34,7 +38,9 @@ class LangfuseAuditPlugin(BasePlugin):
         # invocation_id → langfuse Trace object
         self._traces: dict[str, Any] = {}
 
-    async def before_run_callback(self, *, invocation_context: "InvocationContext") -> None:
+    async def before_run_callback(
+        self, *, invocation_context: InvocationContext
+    ) -> None:
         span = self._langfuse.start_observation(
             name="send-money-transfer",
             as_type="span",
@@ -49,23 +55,27 @@ class LangfuseAuditPlugin(BasePlugin):
 
         # Write Langfuse IDs into session state upfront so tools (e.g.
         # confirm_transfer) can read them before after_tool_callback fires.
-        invocation_context.session.state["_langfuse_trace_id"] = getattr(span, "trace_id", "")
-        invocation_context.session.state["_langfuse_observation_id"] = getattr(span, "id", "")
+        invocation_context.session.state["_langfuse_trace_id"] = getattr(
+            span, "trace_id", ""
+        )
+        invocation_context.session.state["_langfuse_observation_id"] = getattr(
+            span, "id", ""
+        )
 
     async def after_tool_callback(
         self,
         *,
-        tool: "BaseTool",
+        tool: BaseTool,
         tool_args: dict[str, Any],
-        tool_context: "ToolContext",
-        result: dict,
+        tool_context: ToolContext,
+        result: dict[str, Any],
     ) -> None:
         if tool.name not in _AUDIT_TOOLS:
             return
         trace = self._traces.get(tool_context.invocation_id)
         if trace is None:
             return
-        draft: dict = tool_context.state.get("transfer_draft", {})
+        draft: dict[str, Any] = tool_context.state.get("transfer_draft", {})
         trace.update(
             metadata={
                 "transfer_country": draft.get("destination_country"),
@@ -75,11 +85,15 @@ class LangfuseAuditPlugin(BasePlugin):
             },
         )
 
-    async def after_run_callback(self, *, invocation_context: "InvocationContext") -> None:
+    async def after_run_callback(
+        self, *, invocation_context: InvocationContext
+    ) -> None:
         trace = self._traces.pop(invocation_context.invocation_id, None)
         if trace is None:
             return
-        draft: dict = invocation_context.session.state.get("transfer_draft", {})
+        draft: dict[str, Any] = invocation_context.session.state.get(
+            "transfer_draft", {}
+        )
         filled = sum(1 for f in _REQUIRED_FIELDS if draft.get(f))
         completeness = filled / len(_REQUIRED_FIELDS)
         trace.score(name="field_completeness", value=completeness)

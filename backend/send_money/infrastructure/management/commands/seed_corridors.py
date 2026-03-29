@@ -3,7 +3,10 @@
 Usage:
     python backend/manage.py seed_corridors
 """
+
 from __future__ import annotations
+
+from typing import Any
 
 from django.core.management.base import BaseCommand
 
@@ -22,10 +25,12 @@ CORRIDORS = [
 ]
 
 
-class Command(BaseCommand):
-    help = "Seed the corridors table with supported country/delivery-method combinations."
+class Command(BaseCommand):  # type: ignore[misc]
+    help = (
+        "Seed the corridors table with supported country/delivery-method combinations."
+    )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         from send_money.adapters.persistence.django_models import Corridor
 
         created = 0
