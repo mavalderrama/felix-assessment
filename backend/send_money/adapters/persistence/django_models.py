@@ -43,6 +43,7 @@ class TransferRecord(models.Model):  # type: ignore[misc]
     amount_currency = models.CharField(max_length=3)
 
     beneficiary_name = models.CharField(max_length=255)
+    beneficiary_id = models.CharField(max_length=36, blank=True)
     delivery_method = models.CharField(max_length=20)
 
     # Calculated fields
@@ -136,7 +137,7 @@ class BeneficiaryRecord(models.Model):  # type: ignore[misc]
     class Meta:
         app_label = "send_money"
         db_table = "send_money_beneficiaries"
-        unique_together = ("user_id", "name", "account_number", "delivery_method")
+        unique_together = ("user_id", "name", "account_number")
         ordering = ["name"]
 
     def __str__(self) -> str:

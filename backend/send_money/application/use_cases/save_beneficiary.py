@@ -53,17 +53,14 @@ class SaveBeneficiaryUseCase:
         # Different account or different delivery method → new entry.
         existing_entries = await self._repo.find_by_name_and_user(user_id, name)
         existing = next(
-            (
-                e
-                for e in existing_entries
-                if e.account_number == account_number and e.delivery_method == delivery
-            ),
+            (e for e in existing_entries if e.account_number == account_number),
             None,
         )
         if existing is not None:
             updated = existing.model_copy(
                 update={
                     "country_code": country_code.upper() or existing.country_code,
+                    "delivery_method": delivery or existing.delivery_method,
                 }
             )
             return await self._repo.update(updated)
@@ -76,4 +73,20 @@ class SaveBeneficiaryUseCase:
             country_code=country_code.upper() or None,
             delivery_method=delivery,
         )
-        return await self._repo.create(beneficiary)
+        try:
+            return await self._repo.create(beneficiary)
+        except Exception:
+            # DB constraint caught a duplicate the dedup logic missed —
+            # fall back to updating the existing entry.
+            refreshed = await self._repo.find_by_name_and_user(user_id, name)
+            if refreshed:
+                target = refreshed[0]
+                updated = target.model_copy(
+                    update={
+                        "account_number": account_number,
+                        "country_code": country_code.upper() or target.country_code,
+                        "delivery_method": delivery or target.delivery_method,
+                    }
+                )
+                return await self._repo.update(updated)
+            raise

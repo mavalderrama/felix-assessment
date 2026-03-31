@@ -20,7 +20,7 @@ from send_money.domain.errors import (
     InvalidFieldError,
     UnsupportedCorridorError,
 )
-from send_money.domain.repositories import UserAccountRepository
+from send_money.domain.repositories import AuditLogRepository, UserAccountRepository
 from send_money.domain.value_objects import Money
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -467,6 +467,98 @@ class TestConfirmTransferUseCase:
         # Raw USD: 500 + 5 = 505
         deducted = Money(units=units, nanos=nanos, currency_code="USD").to_decimal()
         assert deducted == Decimal("505")
+
+
+# ── Audit log tests ───────────────────────────────────────────────────────────
+
+
+class _SpyAuditLogRepository(AuditLogRepository):
+    """Records all log() calls for assertion in tests."""
+
+    def __init__(self) -> None:
+        self.entries: list[dict[str, Any]] = []
+
+    async def log(
+        self,
+        transfer_id: str,
+        session_id: str,
+        user_id: str,
+        action: str,
+        langfuse_trace_id: str = "",
+        langfuse_observation_id: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.entries.append(
+            {
+                "transfer_id": transfer_id,
+                "session_id": session_id,
+                "user_id": user_id,
+                "action": action,
+                "metadata": metadata or {},
+            }
+        )
+
+
+class TestConfirmTransferAuditLog:
+    """Verify the audit log entry written on confirmation is comprehensive."""
+
+    @pytest.mark.asyncio
+    async def test_confirm_writes_audit_log(self, mock_transfer_repo: Any) -> None:
+        spy = _SpyAuditLogRepository()
+        uc = ConfirmTransferUseCase(mock_transfer_repo, audit_log_repository=spy)
+        await uc.execute(_validated_draft_dict(), "sess-123", "user-456")
+        assert len(spy.entries) == 1
+        entry = spy.entries[0]
+        assert entry["action"] == "CONFIRMED"
+        assert entry["session_id"] == "sess-123"
+        assert entry["user_id"] == "user-456"
+
+    @pytest.mark.asyncio
+    async def test_audit_log_contains_beneficiary_info(
+        self, mock_transfer_repo: Any
+    ) -> None:
+        spy = _SpyAuditLogRepository()
+        uc = ConfirmTransferUseCase(mock_transfer_repo, audit_log_repository=spy)
+        await uc.execute(_validated_draft_dict(), "sess-1", "user-1")
+        meta = spy.entries[0]["metadata"]
+        assert meta["beneficiary_name"] == "Maria Garcia"
+        assert meta["beneficiary_account"] == "1234567890"
+
+    @pytest.mark.asyncio
+    async def test_audit_log_contains_financial_details(
+        self, mock_transfer_repo: Any
+    ) -> None:
+        spy = _SpyAuditLogRepository()
+        uc = ConfirmTransferUseCase(mock_transfer_repo, audit_log_repository=spy)
+        await uc.execute(_validated_draft_dict(), "sess-1", "user-1")
+        meta = spy.entries[0]["metadata"]
+        assert meta["amount_units"] == 500
+        assert meta["amount_currency"] == "USD"
+        assert meta["fee_units"] == 5
+        assert meta["receive_amount_units"] == 9450
+        assert meta["receive_currency"] == "MXN"
+        assert meta["delivery_method"] == "BANK_DEPOSIT"
+        assert meta["destination_country"] == "MX"
+
+    @pytest.mark.asyncio
+    async def test_audit_log_contains_confirmation_code(
+        self, mock_transfer_repo: Any
+    ) -> None:
+        spy = _SpyAuditLogRepository()
+        uc = ConfirmTransferUseCase(mock_transfer_repo, audit_log_repository=spy)
+        result = await uc.execute(_validated_draft_dict(), "sess-1", "user-1")
+        meta = spy.entries[0]["metadata"]
+        assert meta["confirmation_code"] == result.confirmation_code
+        assert meta["confirmation_code"].startswith("SM-")
+
+    @pytest.mark.asyncio
+    async def test_no_audit_when_repository_is_none(
+        self, mock_transfer_repo: Any
+    ) -> None:
+        uc = ConfirmTransferUseCase(mock_transfer_repo)  # no audit repo
+        # Must not raise
+        draft = await uc.execute(_validated_draft_dict(), "sess-1", "user-1")
+        assert draft.status == TransferStatus.CONFIRMED
 
 
 # ── GetCorridorsUseCase ───────────────────────────────────────────────────────

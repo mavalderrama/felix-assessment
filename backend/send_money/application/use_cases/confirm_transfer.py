@@ -119,9 +119,24 @@ class ConfirmTransferUseCase:
                 langfuse_trace_id=langfuse_trace_id,
                 langfuse_observation_id=langfuse_observation_id,
                 metadata={
-                    "destination_country": saved.destination_country,
-                    "amount_currency": saved.amount_currency,
                     "confirmation_code": saved.confirmation_code,
+                    # Transfer details
+                    "destination_country": draft.destination_country,
+                    "amount_units": draft.amount_units,
+                    "amount_nanos": draft.amount_nanos,
+                    "amount_currency": draft.amount_currency,
+                    "fee_units": draft.fee_units,
+                    "fee_nanos": draft.fee_nanos,
+                    "exchange_rate_units": draft.exchange_rate_units,
+                    "exchange_rate_nanos": draft.exchange_rate_nanos,
+                    "receive_amount_units": draft.receive_amount_units,
+                    "receive_amount_nanos": draft.receive_amount_nanos,
+                    "receive_currency": draft.destination_currency,
+                    "delivery_method": str(draft.delivery_method or ""),
+                    # Beneficiary — account is read from draft (not persisted on saved)
+                    "beneficiary_name": draft.beneficiary_name,
+                    "beneficiary_account": draft.beneficiary_account,
+                    "beneficiary_id": draft.beneficiary_id,
                 },
             )
 

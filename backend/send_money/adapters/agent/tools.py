@@ -6,11 +6,71 @@ at construction time — no global state, fully testable.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from send_money.infrastructure.container import Container
+
+logger = logging.getLogger(__name__)
+
+_TD = "td:"
+
+
+def _read_draft(state: Any) -> dict[str, Any]:
+    """Reconstruct transfer draft from per-field state keys (td:<field>).
+
+    Each field is stored as a separate state key so that parallel tool calls
+    writing to different fields don't overwrite each other (ADK tracks state
+    deltas at the key level — last writer wins per key).
+
+    Falls back to the legacy ``state["transfer_draft"]`` dict for sessions
+    created before this change.
+
+    If the draft status is CONFIRMED, returns an empty dict so the next
+    transfer starts fresh — the completed transfer is already persisted in
+    the database.
+    """
+    from send_money.domain.entities import TransferDraft
+
+    draft: dict[str, Any] = {}
+    has_td = False
+    for field in TransferDraft.model_fields:
+        if field == "REQUIRED_FIELDS":
+            continue
+        key = f"{_TD}{field}"
+        if key in state:
+            draft[field] = state[key]
+            has_td = True
+
+    d = draft if has_td else dict(state.get("transfer_draft", {}))
+
+    # A CONFIRMED draft belongs to a completed transfer — start fresh.
+    if d.get("status") == "CONFIRMED":
+        return {}
+    return d
+
+
+def _write_draft(state: Any, draft: Any, before: dict[str, Any] | None = None) -> None:
+    """Persist draft by writing each field as its own state key (td:<field>).
+
+    Writing to separate keys means concurrent tool calls for different fields
+    accumulate correctly instead of one overwriting the other.  The full dict
+    is also written to ``state["transfer_draft"]`` as a convenience copy for
+    the instruction builder and observability layer.
+
+    When ``before`` is supplied only fields whose value differs from ``before``
+    are written.  This prevents a parallel tool call from overwriting a field
+    it never touched (e.g. Tool A sets beneficiary_name; Tool B sets
+    beneficiary_account — without ``before``, Tool B would also write
+    ``td:beneficiary_name = None``, clobbering Tool A's write).
+    """
+    d = draft.to_state_dict()
+    for field, value in d.items():
+        if before is None or before.get(field) != value:
+            state[f"{_TD}{field}"] = value
+    state["transfer_draft"] = d
 
 
 def create_tools(container: Container) -> list[Callable[..., Any]]:
@@ -59,34 +119,52 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
         """
         from send_money.domain.errors import DomainError
 
-        draft_dict: dict[str, Any] = tool_context.state.get("transfer_draft", {})
+        draft_dict: dict[str, Any] = _read_draft(tool_context.state)
+        before = dict(draft_dict)
         try:
             updated = await collect_uc.execute(draft_dict, field_name, field_value)
         except DomainError as exc:
             return {"status": "error", "field": field_name, "message": str(exc)}
 
-        tool_context.state["transfer_draft"] = updated.to_state_dict()
+        _write_draft(tool_context.state, updated, before=before)
 
-        # Auto-save beneficiary once name, account, and delivery_method are all set.
-        # Waiting for delivery_method avoids ghost entries with an empty method.
-        if field_name in ("beneficiary_name", "beneficiary_account", "delivery_method"):
+        # Auto-save beneficiary once ALL key fields are present: name, account,
+        # delivery_method, AND destination_country.  Requiring all four prevents
+        # saving with stale data (e.g. delivery_method pre-filled by
+        # select_beneficiary before the user overrides it).
+        _BENEFICIARY_TRIGGER_FIELDS = {
+            "beneficiary_name",
+            "beneficiary_account",
+            "delivery_method",
+            "destination_country",
+        }
+        if field_name in _BENEFICIARY_TRIGGER_FIELDS:
             uid = _get_user_id(tool_context)
             if (
                 uid
                 and updated.beneficiary_name
                 and updated.beneficiary_account
                 and updated.delivery_method
+                and updated.destination_country
             ):
                 try:
                     await save_beneficiary_uc.execute(
                         user_id=uid,
                         name=updated.beneficiary_name,
                         account_number=updated.beneficiary_account,
-                        country_code=updated.destination_country or "",
+                        country_code=updated.destination_country,
                         delivery_method=str(updated.delivery_method),
                     )
                 except Exception:
-                    pass
+                    logger.exception(
+                        "Auto-save beneficiary failed during update_transfer_field "
+                        "(user=%r name=%r account=%r country=%r method=%r)",
+                        uid,
+                        updated.beneficiary_name,
+                        updated.beneficiary_account,
+                        updated.destination_country,
+                        str(updated.delivery_method),
+                    )
 
         return {
             "status": "updated",
@@ -111,13 +189,13 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
         from send_money.domain.errors import DomainError
         from send_money.domain.value_objects import Money
 
-        draft_dict: dict[str, Any] = tool_context.state.get("transfer_draft", {})
+        draft_dict: dict[str, Any] = _read_draft(tool_context.state)
         try:
             validated = await validate_uc.execute(draft_dict)
         except DomainError as exc:
             return {"status": "error", "message": str(exc)}
 
-        tool_context.state["transfer_draft"] = validated.to_state_dict()
+        _write_draft(tool_context.state, validated)
 
         fee = Money(
             units=validated.fee_units or 0,
@@ -156,7 +234,7 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
         """
         from send_money.domain.errors import DomainError
 
-        draft_dict: dict[str, Any] = tool_context.state.get("transfer_draft", {})
+        draft_dict: dict[str, Any] = _read_draft(tool_context.state)
 
         # user_id: check state first (set by auth tools), fall back to session
         user_id: str = _get_user_id(tool_context)
@@ -173,6 +251,32 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
             tool_context.state.get("_langfuse_observation_id", "") or ""
         )
 
+        # Auto-save beneficiary BEFORE persisting the transfer so that
+        # beneficiary_id is included in the TransferRecord from the start.
+        beneficiary_account = draft_dict.get("beneficiary_account") or ""
+        beneficiary_name = draft_dict.get("beneficiary_name") or ""
+        if user_id and beneficiary_name and beneficiary_account:
+            try:
+                saved_beneficiary = await save_beneficiary_uc.execute(
+                    user_id=user_id,
+                    name=beneficiary_name,
+                    account_number=beneficiary_account,
+                    country_code=draft_dict.get("destination_country") or "",
+                    delivery_method=draft_dict.get("delivery_method") or "",
+                )
+                draft_dict["beneficiary_id"] = saved_beneficiary.id
+            except Exception:
+                logger.exception(
+                    "Auto-save beneficiary failed during confirm_transfer "
+                    "(user=%r name=%r account=%r country=%r method=%r)",
+                    user_id,
+                    beneficiary_name,
+                    beneficiary_account,
+                    draft_dict.get("destination_country"),
+                    draft_dict.get("delivery_method"),
+                )
+                # Never fail the transfer due to beneficiary save errors
+
         try:
             confirmed = await confirm_uc.execute(
                 draft_dict,
@@ -184,25 +288,15 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
         except DomainError as exc:
             return {"status": "error", "message": str(exc)}
 
-        # Auto-save beneficiary for future use (best-effort).
-        # Read beneficiary_account from the original draft_dict because the
-        # TransferRecord (and thus confirmed) does not persist that field.
-        auto_save_user_id = _get_user_id(tool_context)
-        beneficiary_account = draft_dict.get("beneficiary_account") or ""
-        if auto_save_user_id and confirmed.beneficiary_name and beneficiary_account:
-            try:
-                saved_beneficiary = await save_beneficiary_uc.execute(
-                    user_id=auto_save_user_id,
-                    name=confirmed.beneficiary_name,
-                    account_number=beneficiary_account,
-                    country_code=confirmed.destination_country or "",
-                    delivery_method=str(confirmed.delivery_method or ""),
-                )
-                confirmed.beneficiary_id = saved_beneficiary.id
-            except Exception:
-                pass  # Never fail the transfer due to beneficiary save errors
+        _write_draft(tool_context.state, confirmed)
 
-        tool_context.state["transfer_draft"] = confirmed.to_state_dict()
+        # Reset the session draft so the next transfer starts with a blank slate.
+        # The completed transfer is persisted in the database; the in-memory draft
+        # is no longer needed and must not bleed into a subsequent transfer.
+        from send_money.domain.entities import TransferDraft as _TD_cls
+
+        _write_draft(tool_context.state, _TD_cls())
+
         return {
             "status": "confirmed",
             "confirmation_code": confirmed.confirmation_code,
@@ -355,7 +449,7 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
         if not matches:
             return {"status": "not_found", "name": beneficiary_name}
 
-        draft_dict: dict[str, Any] = tool_context.state.get("transfer_draft", {})
+        draft_dict: dict[str, Any] = _read_draft(tool_context.state)
 
         # Always set the name (the same across all entries)
         updated = await collect_uc.execute(
@@ -363,15 +457,80 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
         )
         draft_dict = updated.to_state_dict()
 
+        # If the user already chose a country, narrow matches to that country.
+        user_country = draft_dict.get("destination_country")
+        if user_country and len(matches) > 1:
+            country_matches = [m for m in matches if m.country_code == user_country]
+            if country_matches:
+                matches = country_matches
+            else:
+                # None of the saved entries match the user's country.
+                _write_draft(tool_context.state, updated)
+                return {
+                    "status": "country_conflict",
+                    "beneficiary_name": matches[0].name,
+                    "saved_country": ", ".join(m.country_code or "?" for m in matches),
+                    "user_country": user_country,
+                    "message": (
+                        f"No saved entry for {matches[0].name} in "
+                        f"{format_country(user_country or '')}. "
+                        f"Ask the user for the account number for "
+                        f"{format_country(user_country or '')}."
+                    ),
+                    "missing_fields": updated.missing_fields,
+                }
+
         if len(matches) == 1:
-            # Single entry — apply all available fields
+            # Single entry — apply fields that don't conflict with user-set values.
             match = matches[0]
-            if match.account_number:
+            user_country = draft_dict.get("destination_country")
+
+            # Country conflict: user already chose a different country.
+            # The saved account number and delivery method belong to a different
+            # country and must NOT be applied — they would be wrong for the
+            # user's chosen destination.
+            country_conflict = (
+                user_country
+                and match.country_code
+                and user_country != match.country_code
+            )
+            if country_conflict:
+                _write_draft(tool_context.state, updated)
+                return {
+                    "status": "country_conflict",
+                    "beneficiary_name": match.name,
+                    "saved_country": match.country_code,
+                    "user_country": user_country,
+                    "message": (
+                        f"Saved entry for {match.name} is for "
+                        f"{format_country(match.country_code or '')}, but the user "
+                        f"chose {format_country(user_country or '')}. "
+                        f"Ask the user for the account number for "
+                        f"{format_country(user_country or '')}."
+                    ),
+                    "missing_fields": updated.missing_fields,
+                }
+
+            # No conflict — apply available fields only if not already set.
+            # Skip the saved account when the user chose a different delivery
+            # method — different methods use different identifiers (bank
+            # account vs. phone number vs. pickup code).
+            user_delivery = draft_dict.get("delivery_method")
+            delivery_changed = (
+                user_delivery
+                and match.delivery_method
+                and user_delivery != str(match.delivery_method)
+            )
+            if (
+                match.account_number
+                and not draft_dict.get("beneficiary_account")
+                and not delivery_changed
+            ):
                 updated = await collect_uc.execute(
                     draft_dict, "beneficiary_account", match.account_number
                 )
                 draft_dict = updated.to_state_dict()
-            if match.country_code:
+            if match.country_code and not draft_dict.get("destination_country"):
                 try:
                     updated = await collect_uc.execute(
                         draft_dict, "destination_country", match.country_code
@@ -379,7 +538,7 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
                     draft_dict = updated.to_state_dict()
                 except DomainError:
                     pass
-            if match.delivery_method:
+            if match.delivery_method and not draft_dict.get("delivery_method"):
                 try:
                     updated = await collect_uc.execute(
                         draft_dict, "delivery_method", str(match.delivery_method)
@@ -388,15 +547,16 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
                 except DomainError:
                     pass
 
-            tool_context.state["transfer_draft"] = updated.to_state_dict()
+            _write_draft(tool_context.state, updated)
             return {
                 "status": "selected",
                 "beneficiary_name": match.name,
-                "beneficiary_account": match.account_number,
-                "destination_country": match.country_code or "",
-                "delivery_method": str(match.delivery_method)
-                if match.delivery_method
-                else "",
+                "beneficiary_account": draft_dict.get("beneficiary_account") or "",
+                "destination_country": draft_dict.get("destination_country")
+                or match.country_code
+                or "",
+                "delivery_method": draft_dict.get("delivery_method")
+                or (str(match.delivery_method) if match.delivery_method else ""),
                 "missing_fields": updated.missing_fields,
             }
 
@@ -410,7 +570,7 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
             draft_dict = updated.to_state_dict()
 
         countries = {m.country_code for m in matches if m.country_code}
-        if len(countries) == 1:
+        if len(countries) == 1 and not draft_dict.get("destination_country"):
             try:
                 updated = await collect_uc.execute(
                     draft_dict, "destination_country", countries.pop()
@@ -419,7 +579,7 @@ def create_tools(container: Container) -> list[Callable[..., Any]]:
             except DomainError:
                 pass
 
-        tool_context.state["transfer_draft"] = updated.to_state_dict()
+        _write_draft(tool_context.state, updated)
         return {
             "status": "multiple_found",
             "beneficiary_name": matches[0].name,

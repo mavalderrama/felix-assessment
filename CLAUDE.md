@@ -110,3 +110,10 @@ uv run pytest tests/test_foo.py::test_bar  # run a single test
 - Write clean, testable, and maintainable code.
 - Prefer composition over inheritance.
 - Keep functions and methods small and focused on a single responsibility.
+
+## venv usage
+- always make use of project venv at .venv/ folder for python dependencies
+
+## python style and formatter
+- use ruff for formatting and linting
+- use mypy to validate types and static typing

@@ -99,15 +99,14 @@ class TestSaveBeneficiaryUseCase:
         assert b1.id != b2.id
 
     @pytest.mark.asyncio
-    async def test_different_delivery_methods_same_account_create_separate_records(
+    async def test_different_delivery_methods_same_account_updates_existing(
         self, uc: SaveBeneficiaryUseCase
     ) -> None:
+        """Same account + different delivery methods → update in-place, no duplicate."""
         b1 = await uc.execute("user-1", "Neyla Rios", "COL123", "CO", "BANK_DEPOSIT")
         b2 = await uc.execute("user-1", "Neyla Rios", "COL123", "CO", "CASH_PICKUP")
-        assert b1.id != b2.id
-        assert b1.delivery_method is not None
+        assert b1.id == b2.id  # same entry, updated in place
         assert b2.delivery_method is not None
-        assert b1.delivery_method.value == "BANK_DEPOSIT"
         assert b2.delivery_method.value == "CASH_PICKUP"
 
     @pytest.mark.asyncio
@@ -127,10 +126,11 @@ class TestSaveBeneficiaryUseCase:
         uc2 = SaveBeneficiaryUseCase(repo)
         list_uc = ListBeneficiariesUseCase(repo)
         await uc2.execute("user-1", "Neyla Rios", "COL123", "CO", "BANK_DEPOSIT")
+        # Same account + different delivery method → updates, no duplicate
         await uc2.execute("user-1", "Neyla Rios", "COL123", "CO", "CASH_PICKUP")
         await uc2.execute("user-1", "Neyla Rios", "COL456", "CO", "BANK_DEPOSIT")
         result = await list_uc.execute("user-1")
-        assert len(result) == 3
+        assert len(result) == 2  # COL123 (updated) + COL456
 
 
 # ── TestListBeneficiariesUseCase ───────────────────────────────────────────────

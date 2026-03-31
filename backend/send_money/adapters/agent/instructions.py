@@ -33,17 +33,32 @@ Current transfer state:
 
   A) User provides ONLY a name (e.g. "neyla") → call select_beneficiary().
      - If status "selected": all fields were applied. Check missing_fields.
+     - If status "country_conflict": the saved entry is for a different
+       country than what the user already set. Ask the user for the
+       account number for their chosen country. Do NOT fall back to the
+       saved account — it belongs to a different destination.
      - If status "multiple_found": the name has multiple saved entries
-       (listed in "options"). Present the options to the user and ask which
-       one to use. Then call update_transfer_field() for the chosen values.
+       (listed in "options"). Present them as a NUMBERED LIST and ask which
+       one to use. The user can reply with the number or the full details.
+       Then call update_transfer_field() for the chosen values.
 
-  B) User provides a name AND an account number (e.g. "neyla, account: 123")
-     → this is a NEW or EXPLICIT entry. Do NOT call select_beneficiary().
-     Instead call update_transfer_field() TWICE: once for "beneficiary_name"
-     and once for "beneficiary_account". Then continue collecting the
-     remaining fields (destination_country, delivery_method, etc.) normally.
+  B) User provides a name AND an account number (e.g. "neyla, account: 123",
+     "send 10 eur to neyla but mobile wallet account comw123") → this is a
+     NEW or EXPLICIT entry. Do NOT call select_beneficiary(). Instead call
+     update_transfer_field() for EVERY field the user provided in the message:
+     beneficiary_name, beneficiary_account, and any other explicit fields
+     (delivery_method, destination_country, amount, currency, etc.).
      Even if the name matches a saved beneficiary, the user explicitly
      provided a different account — treat it as a new recipient.
+
+  C) User provides a name AND extra details such as destination country or
+     delivery method (e.g. "neyla GB", "send to neyla in CO but cash pickup")
+     → call update_transfer_field() for EACH explicit detail
+     (destination_country, delivery_method, etc.) FIRST, then call
+     select_beneficiary(). If the tool returns status "country_conflict",
+     the saved entry is for a different country — ask the user for the
+     account number for their chosen country. Do NOT use the saved
+     account number — it belongs to a different destination.
 
 • If no saved beneficiary matches (or the list is empty), ask the user for
   both the recipient's full name AND their account number (bank account,
@@ -86,9 +101,14 @@ All six fields must be set before you can validate the transfer:
      call update_transfer_field() twice — once for "beneficiary_name" and once for
      "beneficiary_account".
 3b. When destination_country is set and delivery_method is still missing,
-    call get_delivery_methods(country_code) FIRST, then present ONLY the
-    returned methods to the user. NEVER list delivery methods from memory
-    or from these instructions — always use the tool result.
+    call get_delivery_methods(country_code) FIRST.
+    - If ONLY ONE method is returned, call update_transfer_field() to set it
+      automatically and inform the user (e.g. "Bank Deposit is the only
+      delivery option for India — I've set it automatically."). Do NOT ask.
+    - If MULTIPLE methods are returned, present ONLY the returned methods to
+      the user as a NUMBERED LIST and ask the user to choose. NEVER list
+      delivery methods from memory or from these instructions — always use
+      the tool result. The user can reply with the number or the name.
 4. Once all required fields are present, call validate_transfer() automatically.
 5. Present the summary to the user (amount, fee, exchange rate, receive amount).
 6. Ask the user to confirm.  When they confirm, call confirm_transfer().
@@ -128,6 +148,15 @@ All six fields must be set before you can validate the transfer:
 • Be concise and conversational.
 • Do not list all required fields in a single message — ask for one or two at a time.
 • When presenting the summary, format it clearly with amounts and currencies.
+• Whenever you present a list of options for the user to choose from (delivery
+  methods, supported countries, multiple beneficiary matches, etc.), always format
+  them as a NUMBERED LIST so the user can reply with either the number or the name.
+  Example for delivery methods:
+    1. Bank Deposit
+    2. Cash Pickup
+    3. Mobile Wallet
+  Accept both "1" and "Bank Deposit" as valid selections — map the number back to
+  the correct field value before calling update_transfer_field().
 • Always present countries, currencies, and delivery methods using their full
   name together with the short code in parentheses. Examples:
     - "Mexico (MX)" not "MX"
@@ -138,10 +167,32 @@ All six fields must be set before you can validate the transfer:
 
 
 def _summarise_draft(state: dict[str, Any]) -> str:
-    """Convert the raw transfer_draft state dict into a readable summary."""
-    d = state.get("transfer_draft", {})
+    """Convert the transfer draft state into a readable summary.
+
+    Prefers individual per-field keys (td:<field>) written by tools, because
+    parallel tool calls each write to separate keys and never overwrite each
+    other.  Falls back to the legacy ``transfer_draft`` dict for sessions that
+    have not yet been updated by the new code.
+    """
+    from send_money.domain.entities import TransferDraft
+
+    td_prefix = "td:"
+    draft_from_td: dict[str, Any] = {}
+    for field in TransferDraft.model_fields:
+        if field == "REQUIRED_FIELDS":
+            continue
+        key = f"{td_prefix}{field}"
+        if key in state:
+            draft_from_td[field] = state[key]
+
+    d = draft_from_td if draft_from_td else state.get("transfer_draft", {})
     if not d:
         return "(empty — no fields set yet)"
+
+    # A CONFIRMED draft belongs to a completed transfer.  Show it as empty so
+    # the LLM does not re-use any field values from the previous transfer.
+    if d.get("status") == "CONFIRMED":
+        return "(empty — previous transfer completed, ready for a new one)"
 
     lines = []
     mapping = {
@@ -160,7 +211,7 @@ def _summarise_draft(state: dict[str, Any]) -> str:
     if units is not None and currency:
         from decimal import Decimal
 
-        amount = Decimal(units) + Decimal(nanos) / Decimal("1000000000")
+        amount = Decimal(int(units)) + Decimal(int(nanos)) / Decimal("1000000000")
         lines.append(f"  amount:              {amount} {currency}")
     elif units is not None:
         lines.append(f"  amount_units:        {units}")

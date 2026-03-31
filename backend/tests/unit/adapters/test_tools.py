@@ -589,10 +589,10 @@ class TestSelectBeneficiary:
         assert result["status"] == "error"
 
     @pytest.mark.asyncio
-    async def test_multiple_delivery_methods_same_account_returns_multiple_found(
+    async def test_same_account_different_delivery_method_updates_not_duplicates(
         self, setup: Any, mock_tool_context: Any
     ) -> None:
-        """Same account, multiple methods → multiple_found with account pre-filled."""
+        """Same account saved twice with different methods → one entry, updated."""
         tools, save_uc = setup
         await save_uc.execute("test-user", "Neyla Rios", "COL123", "CO", "BANK_DEPOSIT")
         await save_uc.execute("test-user", "Neyla Rios", "COL123", "CO", "CASH_PICKUP")
@@ -600,18 +600,17 @@ class TestSelectBeneficiary:
 
         result = await tools["select_beneficiary"]("Neyla Rios", mock_tool_context)
 
-        assert result["status"] == "multiple_found"
+        # Only one entry exists (second save updated the first, not created a duplicate)
+        assert result["status"] == "selected"
         assert result["beneficiary_name"] == "Neyla Rios"
-        assert len(result["options"]) == 2
-        methods = {opt["delivery_method"] for opt in result["options"]}
-        assert methods == {"BANK_DEPOSIT", "CASH_PICKUP"}
+        assert result["beneficiary_account"] == "COL123"
+        assert result["delivery_method"] == "CASH_PICKUP"
 
-        # Account and country are the same for all entries — both should be pre-filled
         draft = mock_tool_context.state["transfer_draft"]
         assert draft["beneficiary_name"] == "Neyla Rios"
         assert draft["beneficiary_account"] == "COL123"
         assert draft["destination_country"] == "CO"
-        assert draft.get("delivery_method") is None  # still needs to be chosen
+        assert draft["delivery_method"] == "CASH_PICKUP"
 
     @pytest.mark.asyncio
     async def test_multiple_accounts_each_appears_in_options(
@@ -650,6 +649,136 @@ class TestSelectBeneficiary:
         draft = mock_tool_context.state["transfer_draft"]
         # Countries differ → destination_country must stay unset (agent collects it)
         assert draft.get("destination_country") is None
+
+    @pytest.mark.asyncio
+    async def test_multiple_entries_filtered_by_user_country(
+        self, setup: Any, mock_tool_context: Any
+    ) -> None:
+        """User sets country before select_beneficiary → matching entry selected."""
+        tools, save_uc = setup
+        await save_uc.execute("test-user", "Carl", "ukacc123", "GB", "BANK_DEPOSIT")
+        await save_uc.execute("test-user", "Carl", "mxaccount123", "MX", "CASH_PICKUP")
+        # Simulate LLM calling update_transfer_field("destination_country", "MX") first
+        mock_tool_context.state["transfer_draft"] = {"destination_country": "MX"}
+
+        result = await tools["select_beneficiary"]("Carl", mock_tool_context)
+
+        # MX entry should be auto-selected, not presented as a list
+        assert result["status"] == "selected"
+        assert result["beneficiary_account"] == "mxaccount123"
+        assert result["destination_country"] == "MX"
+        assert result["delivery_method"] == "CASH_PICKUP"
+
+    @pytest.mark.asyncio
+    async def test_multiple_entries_no_match_for_user_country_returns_conflict(
+        self, setup: Any, mock_tool_context: Any
+    ) -> None:
+        """User sets a country with no saved entry → country_conflict status."""
+        tools, save_uc = setup
+        await save_uc.execute("test-user", "Carl", "ukacc123", "GB", "BANK_DEPOSIT")
+        await save_uc.execute("test-user", "Carl", "mxaccount123", "MX", "CASH_PICKUP")
+        mock_tool_context.state["transfer_draft"] = {"destination_country": "CO"}
+
+        result = await tools["select_beneficiary"]("Carl", mock_tool_context)
+
+        assert result["status"] == "country_conflict"
+        assert result["user_country"] == "CO"
+
+    @pytest.mark.asyncio
+    async def test_different_delivery_method_clears_saved_account(
+        self, setup: Any, mock_tool_context: Any
+    ) -> None:
+        """Saved CASH_PICKUP account not applied when user picks MOBILE_WALLET."""
+        tools, save_uc = setup
+        await save_uc.execute("test-user", "Carl", "mxaccount123", "MX", "CASH_PICKUP")
+        # User already chose MX + MOBILE_WALLET before calling select_beneficiary
+        mock_tool_context.state["transfer_draft"] = {
+            "destination_country": "MX",
+            "delivery_method": "MOBILE_WALLET",
+        }
+
+        result = await tools["select_beneficiary"]("Carl", mock_tool_context)
+
+        assert result["status"] == "selected"
+        # Saved account belongs to CASH_PICKUP — must not be carried over
+        assert not result.get("beneficiary_account")
+        draft = mock_tool_context.state["transfer_draft"]
+        assert (
+            draft.get("beneficiary_account") is None
+        )  # agent must ask for phone number
+
+
+# ── Parallel tool call state safety ──────────────────────────────────────────
+
+
+class TestParallelToolCallStateSafety:
+    """Verify that concurrent update_transfer_field calls don't overwrite each other.
+
+    ADK may execute multiple tool calls emitted in the same LLM turn in parallel.
+    Each tool reads the draft, updates one field, and writes the full draft back.
+    Without per-field state keys the last writer silently drops the other's change.
+    """
+
+    @pytest.fixture
+    def tools(
+        self, in_memory_corridor_repo: Any, mock_transfer_repo: Any
+    ) -> dict[str, Any]:
+        from send_money.adapters.agent.tools import create_tools
+
+        container = _make_container(in_memory_corridor_repo, mock_transfer_repo)
+        return {fn.__name__: fn for fn in create_tools(container)}
+
+    @pytest.mark.asyncio
+    async def test_parallel_writes_preserve_all_fields(
+        self, tools: dict[str, Any], mock_tool_context: Any
+    ) -> None:
+        """Simulates two tool calls running in parallel: each writes a different field.
+
+        ADK parallel execution model: both tools read the session state snapshot
+        at the START of the turn, execute their use cases, then each writes only
+        its own changed fields back as individual state deltas.  The deltas are
+        merged by ADK — writes to different keys accumulate; neither overwrites
+        the other.
+
+        We reproduce the race by running both coroutines via asyncio.gather on
+        the shared mock_tool_context.  Because _write_draft only writes fields
+        that actually changed (``before`` diff), Tool B's write of
+        ``td:beneficiary_account`` does NOT touch ``td:beneficiary_name``, so
+        Tool A's write survives.
+        """
+        import asyncio
+
+        from send_money.adapters.agent.tools import _read_draft
+
+        # Set destination_country first (as the LLM would do in a prior turn)
+        await tools["update_transfer_field"](
+            "destination_country", "MX", mock_tool_context
+        )
+
+        # Run the two parallel calls concurrently on the shared context.
+        # Each call reads the current state (which has destination_country = MX),
+        # updates its own field, and writes only the diff back.
+        await asyncio.gather(
+            tools["update_transfer_field"](
+                "beneficiary_name", "Maria Garcia", mock_tool_context
+            ),
+            tools["update_transfer_field"](
+                "beneficiary_account", "MX123456", mock_tool_context
+            ),
+        )
+
+        draft = _read_draft(mock_tool_context.state)
+        # destination_country from the prior turn must still be present
+        assert draft["destination_country"] == "MX", (
+            "destination_country was lost during parallel writes"
+        )
+        # Both parallel writes must have survived
+        assert draft["beneficiary_name"] == "Maria Garcia", (
+            "beneficiary_name was overwritten by parallel write"
+        )
+        assert draft["beneficiary_account"] == "MX123456", (
+            "beneficiary_account was overwritten by parallel write"
+        )
 
 
 # ── create_account ────────────────────────────────────────────────────────────
